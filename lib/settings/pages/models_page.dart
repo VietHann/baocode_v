@@ -21,6 +21,7 @@ import '../../models/featured_upstreams.dart';
 import '../../models/model_icons.dart';
 import '../../models/model_provider.dart';
 import '../../models/model_providers.dart';
+import '../../models/provider_presets.dart';
 import '../../models/model_runtime.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/codicons.dart';
@@ -28,6 +29,7 @@ import '../../theme/workbench_theme.dart' show themeColors;
 import '../../chat/widgets/hover_builder.dart';
 import '../../chat/widgets/pixel_loader.dart';
 import '../../workspace/workspace.dart';
+import '../../workspace/editor_launcher.dart' show openExternal;
 import 'featured_upstreams_strip.dart';
 import 'model_dialogs.dart';
 import 'settings_dropdown.dart';
@@ -186,6 +188,21 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
     );
     if (mounted) setState(() => _open = id);
   }
+
+  Future<void> _addPreset(ProviderPreset preset) async {
+    final id = _providers.newId(preset.name);
+    await _providers.save(preset.create(id));
+    if (mounted) setState(() => _open = id);
+  }
+
+  List<IdeMenuAction> _presetEntries(ProviderPresetGroup group) => [
+    for (final preset in ProviderPreset.all)
+      if (preset.group == group)
+        IdeMenuAction(
+          preset.name,
+          onSelected: () => unawaited(_addPreset(preset)),
+        ),
+  ];
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -430,11 +447,40 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                 onOpen: () => setState(() => _open = provider.id),
               ),
             SettingsRow(
-              label: l10n.modelsAddProvider,
-              trailing: IdeButton(
-                label: l10n.modelsAddProvider,
-                icon: Codicons.add,
-                onPressed: () => unawaited(_add()),
+              label: 'Connect AI service',
+              description: 'Choose ChatGPT account sign-in, an official '
+                  'API provider, or a local model server.',
+              trailing: SettingsButtons(
+                children: [
+                  SettingsDropdown(
+                    current: 'Choose service',
+                    semanticLabel: 'Choose AI service to connect',
+                    entries: () => [
+                      IdeMenuAction(
+                        'Account sign-in',
+                        submenu: _presetEntries(ProviderPresetGroup.account),
+                      ),
+                      IdeMenuAction(
+                        'OpenCode and gateways',
+                        submenu: _presetEntries(ProviderPresetGroup.gateway),
+                      ),
+                      IdeMenuAction(
+                        'Direct provider APIs',
+                        submenu: _presetEntries(ProviderPresetGroup.api),
+                      ),
+                      IdeMenuAction(
+                        'Local model servers',
+                        submenu: _presetEntries(ProviderPresetGroup.local),
+                      ),
+                    ],
+                  ),
+                  IdeButton(
+                    label: l10n.modelsAddProvider,
+                    icon: Codicons.add,
+                    secondary: true,
+                    onPressed: () => unawaited(_add()),
+                  ),
+                ],
               ),
             ),
           ],
@@ -1123,6 +1169,20 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
             },
           ),
         ),
+        if (ProviderPreset.forProvider(provider) case final preset?
+            when preset.credentialsUrl != null)
+          SettingsRow(
+            label: 'Get API key',
+            description: 'Sign in on the provider website, create an API '
+                'key, then paste it below. Keys stay in your keychain.',
+            trailing: IdeButton(
+              label: 'Open provider website',
+              secondary: true,
+              onPressed: () => unawaited(
+                openExternal(preset.credentialsUrl!),
+              ),
+            ),
+          ),
         SettingsRow(
           label: l10n.modelsProtocol,
           description: l10n.modelsProtocolDescription,
