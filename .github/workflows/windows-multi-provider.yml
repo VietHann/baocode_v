@@ -1,0 +1,44 @@
+name: Windows x64 (multi-provider fork)
+
+on:
+  push:
+    branches:
+      - feature/multi-provider-connect
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.5'
+          cache: true
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Run provider tests
+        run: flutter test test/models/provider_presets_test.dart
+      - name: Analyze modified Dart files
+        run: dart analyze lib/models/provider_presets.dart lib/settings/pages/models_page.dart test/models/provider_presets_test.dart
+      - name: Build Windows x64
+        run: flutter build windows --release
+      - name: Package executable and required runtime
+        shell: pwsh
+        run: |
+          $bundle = "build/windows/x64/runner/Release"
+          if (-not (Test-Path "$bundle/baocode.exe")) {
+            throw "Windows build did not produce baocode.exe"
+          }
+          Compress-Archive -Path "$bundle/*" -DestinationPath "BaoCode-multi-provider-windows-x64.zip" -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BaoCode-multi-provider-windows-x64
+          path: BaoCode-multi-provider-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30
