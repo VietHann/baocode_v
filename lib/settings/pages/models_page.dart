@@ -218,9 +218,15 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
   Future<void> _loadQoder() async {
     try {
       final account = await _qoderOAuth.saved(secrets: _providers.secrets);
-      if (account != null &&
-          _providers.provider(nativeQoderProviderId) == null) {
-        await NativeAccountUpstreams.upsertQoder(_providers, account);
+      if (account != null) {
+        final existing = _providers.provider(nativeQoderProviderId);
+        if (existing == null) {
+          await NativeAccountUpstreams.upsertQoder(_providers, account);
+        } else if (existing.name == 'Qoder (account only)') {
+          // Previous VietCode builds saved this label. Migrate it in place
+          // without discarding the user's account, roles or model toggles.
+          await _providers.save(existing.copyWith(name: 'Qoder'));
+        }
       }
       if (mounted) setState(() => _qoderAccount = account);
     } on Object {
