@@ -25,6 +25,7 @@ import '../../models/openrouter_oauth.dart';
 import '../../models/qoder_direct_oauth.dart';
 import '../../models/copilot_direct.dart';
 import '../../models/native_account_upstreams.dart';
+import '../../models/upstream.dart' show mergeModelList;
 import '../../models/model_runtime.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/codicons.dart';
@@ -451,6 +452,22 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
           baseUrl: 'https://openrouter.ai/api/v1',
           disableNonessentialTraffic: true,
         ));
+      }
+      // Populate real models immediately after OAuth. Importing the OAuth
+      // credential without fetching the catalog leaves Upstreams showing
+      // "0 models" even though the user already authorized the account.
+      try {
+        final current = _providers.provider(id)!;
+        final remote = await listUpstreamModels(current, credential);
+        await _providers.save(current.copyWith(
+          models: mergeModelList(current.models, remote),
+        ));
+      } on Object catch (error) {
+        if (mounted) {
+          setState(() => _oauthError =
+              'OpenRouter signed in, but model discovery failed: $error. '
+              'Use Fetch inside its Upstream to retry.');
+        }
       }
       if (mounted) setState(() => _open = id);
     } on OpenRouterAuthCancelled {
