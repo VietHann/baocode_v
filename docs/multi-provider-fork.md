@@ -1,126 +1,93 @@
-# BaoCode account sign-in: Codex, OpenRouter, Qoder, OpenCode and Antigravity
+# VietCode — Native account OAuth implementation
 
-This fork integrates *account-based* authentication. Qoder/OpenCode are native
-coding-agent kernels and are **not** API endpoints masquerading as OAuth.
-They use the official local CLI's saved OAuth session; BaoCode never opens
-their credential file or collects a subscription token.
+**Requirement:** VietCode connects to accounts and model services itself, with
+no externally installed Qoder CLI, OpenCode CLI, Node.js, 9Router process or
+third-party localhost gateway required for the native flows.
 
-## Select a runtime
+## Actual integration status (do not treat login as inference)
 
-Start a **new chat**, open its coding-agent/kernel selector, and choose:
-- Claude Code (existing BaoCode agent)
-- Qoder (official signed-in local Qoder CLI)
-- OpenCode (official signed-in local OpenCode CLI)
-- Antigravity (community plugin installed by the user in OpenCode)
+| Provider | Browser sign-in | Automatic account storage | Models / inference | Status |
+| --- | --- | --- | --- | --- |
+| ChatGPT Codex | Built-in OAuth PKCE | Existing OS keychain | Existing Codex proxy | Pre-existing functionality; verify live |
+| OpenRouter | Official OAuth PKCE | OS keychain | Existing OpenAI-compatible proxy | Implemented; verify live |
+| Qoder | Direct device OAuth PKCE; poll Qoder | OS keychain | **Not yet:** Qoder's proprietary COSY request signing / model and SSE protocols | Login implemented and unit-tested, model calls incomplete |
+| GitHub Copilot | Native GitHub device OAuth | OS keychain | Native Copilot model catalog and chat completions (no external CLI) | Implemented and mock-tested, real subscription smoke test pending |
+| OpenCode Zen / Go | **No documented subscription OAuth grant to third parties** | — | Official provider currently requires an API key | No misleading "OAuth" login |
+| Google Antigravity | Community and 9Router Google OAuth experiments | — | Proprietary and unstable Google Cloud Code endpoints | **Not implemented natively**; account restriction risk |
+| Qoder CLI / OpenCode CLI / Antigravity OpenCode plugin | External CLI/agent sessions | CLI-managed | Previously implemented but not native | Hidden from the default agent selector |
 
-The model picker offers a default tier plus detected model IDs from
-qoder --list-models or opencode models. For Antigravity only Google models
-advertised by opencode models google are offered. Detection is opportunistic:
-if no CLI or login is available, you will see the default/seed options and a
-sign-in error when the first task runs.
+The GitHub Copilot direct kernel is an experimental chat-only provider (text,
+model discovery, text replies, session conversation memory). It is *not* a
+complete coding agent with file edits, shell tools, MCP or streaming tool
+approvals; the user must not assume it has changed project files.
 
-Qoder/OpenCode sessions are separate coding agents, each with its own tools,
-configuration, MCP, and tool permissions. Their conversation stream displays
-in BaoCode, but tool approvals are not translated to BaoCode dialogs yet.
-The upstream CLI keeps its default permission policy; BaoCode never sets
-the OpenCode --auto flag or bypasses security dialogs. Run on a trusted,
-local workspace. The integration currently does not run a remote agent on
-an SSH host. Images are not forwarded to the CLI in this first version.
+The new Qoder login is **genuinely native**: VietCode generates PKCE,
+machine ID and nonce, navigates to qoder.com/device/selectAccounts, polls
+openapi.qoder.sh/api/v1/deviceToken/poll, reads Qoder's profile and saves the
+session in the OS keychain. It does not need an executable downloaded from
+Qoder. The account session is NOT automatically compatible with BaoCode's
+existing OpenAI/Anthropic upstream protocol. It is not exposed as a working
+model until inference has been added and tested.
 
-## Qoder OAuth login (official)
+## Examined repositories and design rationale
 
-1. Install Qoder CLI following https://docs.qoder.com/cli/installation
-2. Settings > Models > Qoder > Sign in with Qoder (Windows). This opens an
-   interactive terminal running qoder. Finish the official account login.
-3. Start a new BaoCode chat and choose the Qoder kernel.
-4. Select the Qoder model from the model picker or leave Default.
+1. **decolua/9router** — https://github.com/decolua/9router
+   MIT License. Reviewed:
+   - src/lib/oauth/services/qoder.js
+   - src/lib/oauth/providers/qoder.js
+   - src/lib/oauth/providers/github.js
+   - src/lib/oauth/providers/antigravity.js
+   - open-sse/executors/qoder.js
+   - open-sse/executors/antigravity.js
+   - open-sse/providers/registry/{qoder,github,antigravity,opencode}.js
+   - open-sse/shared/qoder/{cosy,encoding,sse}.js
 
-The adapter launches qoder -p with --output-format stream-json and optionally
---model and --session-id. Qoder manages its own account authentication,
-credit limits, command tools, and session storage.
+   **Only protocol behavior was ported to Dart. No 9Router server,
+   credentials store, package, or hosted endpoint is called by VietCode.**
+   License attribution remains in native provider source files.
 
-References:
-- https://docs.qoder.com/cli/run-in-scripts
-- https://docs.qoder.com/cli/model
-- https://docs.qoder.com/cli/sdk/authentication
-- https://github.com/QoderAI/qoder-agent-sdk-samples
-- https://github.com/QoderAI/Qoderian
+2. **CLIProxyAPI / CLIProxyAPIPlus** — the Qoder COSY protocol research
+   and signing details in 9Router trace back to these implementations.
+   Before copying any future code, inspect the exact project's license.
+3. **cubk1/qoder2api / Zhengyuuuui/qoder2api** — community work on
+   Qoder's account protocol. These projects can break on upstream changes.
+4. **anomalyco/opencode** — https://github.com/anomalyco/opencode
+   Auth in OpenCode is per provider; the "OpenCode Zen" and "OpenCode Go"
+   account flow currently gives a key to paste into the client.
+5. **NoeFabris/opencode-antigravity-auth** and community forks — unofficial
+   Google-account integration with notices about account restrictions.
+   Authentication is not equivalent to a Google-approved third-party API.
+6. **Qoder Agent SDK** — https://docs.qoder.com/cli/sdk/how-it-works
+   Official embedding still runs a *local qodercli subprocess* internally,
+   which would not meet the no-CLI dependency requirement.
 
-The Agent SDK is another supported approach; this integration uses the
-official CLI's documented headless JSON stream so no separate Node runtime
-or SDK download is bundled into the Windows installer.
+## Security & compatibility
 
-## OpenCode provider OAuth login (official client)
+- OAuth tokens stored in SecretStore, never in settings.json.
+- HTTP is allowed only for **127.0.0.1 mock test servers**; real provider
+  API endpoints use HTTPS.
+- Qoder device login has cancellation, poll timeout, and PKCE nonce.
+- GitHub Copilot device OAuth verifies actual model-token exchange and
+  lists account model IDs before the UI claims active model access.
+- Never assume an OAuth login grants a paid plan or free model quota.
+- GitHub Copilot uses unofficial model endpoints; they can change and may
+  restrict third-party use.
+- No provider should be presented as connected just because its login
+  webpage opened.
+- No 9Router process, request, config or localhost port 20128 is used.
 
-1. Install OpenCode: https://opencode.ai/docs
-2. Settings > Models > OpenCode > Open OAuth login. The official command
-   opencode auth login runs in an interactive terminal.
-3. Pick a provider and its OAuth method if offered; some integrations only
-   accept API keys, and this fork does not claim otherwise.
-4. Check with opencode auth list and opencode models.
-5. Start a BaoCode chat and choose the OpenCode kernel. The model picker
-   picks IDs in provider/model form for the signed-in OpenCode account.
+## Build
 
-The adapter launches opencode run --format json with --model and --session
-when a session has been returned. It does not copy or export OpenCode keys.
-Never check auth files into Git.
+GitHub Actions on feature/multi-provider-connect runs pure-Dart protocol
+tests, Flutter adapter tests, dart analyzer, the Flutter Windows release
+build, Python/Pillow branding conversion from the user's photo and an
+Inno Setup installer:
 
-References:
-- https://dev.opencode.ai/docs/cli/
-- https://dev.opencode.ai/docs/server/
-- https://github.com/anomalyco/opencode
+    VietCode-1.7.0-setup.exe
 
-## Google Antigravity community OAuth — optional and risky
+VietCode.exe is the public-facing Windows shortcut; baocode.exe remains
+inside for native browser bridge and auto-update compatibility.
 
-This is NOT an official Google sign-in for third-party apps. Community authors
-warn that their plugin may violate Google's terms and accounts may be
-suspended or shadow-banned. BaoCode DOES NOT automatically install the
-plugin or copy/reuse Google's private credentials or endpoints. Only enable
-this if you understand and accept the independent plugin's risks.
-
-To opt in:
-1. Install and sign in to the official OpenCode CLI.
-2. Review the plugin source and installation instructions:
-   https://github.com/zeklop/opencode-antigravity-auth
-3. Add the plugin to your own ~/.config/opencode/opencode.json as
-   documented by that plugin. Do not put tokens in BaoCode configuration.
-4. Run opencode auth login, choose Google Antigravity from the plugin,
-   finish browser OAuth, and configure the plugin's models.
-5. Verify that opencode models google lists the Antigravity model IDs.
-6. In BaoCode, choose the **Antigravity (community)** kernel and pick a
-   Google model from the list. Its runtime is still OpenCode.
-
-Original historical implementation:
-https://github.com/NoeFabris/opencode-antigravity-auth (archived in 2026)
-Community maintained alternatives:
-https://github.com/vibheksoni/opencode-antigravity-auth
-https://github.com/andyvandaric/opencode-ag-auth
-
-These repositories are third parties; BaoCode does not endorse them.
-Do not attempt to circumvent account bans, quotas, or provider restrictions.
-
-## ChatGPT Codex and OpenRouter
-
-- ChatGPT Codex: existing official browser OAuth PKCE in BaoCode
-- OpenRouter: new official PKCE browser OAuth. It returns an account-scoped
-  key, which BaoCode stores in the system keychain automatically after the
-  login callback. No manual API key entry is required.
-
-## Windows installer
-
-The fork-specific GitHub Actions workflow builds a real Inno Setup EXE:
-BaoCode-1.7.0-setup.exe (no signature). It uses the existing
-tool/build_windows.dart packaging and downloads the official BaoCode remote
-SSH helper metadata. Download from Actions > Artifacts; GitHub wraps the
-installer in a ZIP for download. Extract and launch the setup.exe.
-
-Qoder and OpenCode are external official CLIs and must be installed on the
-user's machine to activate those kernels. They are not bundled into the EXE.
-
-## Limits not covered by automated CI
-
-CI tests parsing of documented JSON streams, arguments, session IDs and
-OAuth callback security; it builds and packages the installer. It cannot
-complete external browser OAuth or assert that a user account has paid model
-quota. Test the real workflows on a Windows workstation before relying on
-them for important coding changes.
+Unverified: interactive Qoder and GitHub logins, live model quota, and
+complete IDE coding tasks with the newly built native adapters. These
+cannot be simulated by CI and require real user/account smoke tests.
