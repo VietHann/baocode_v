@@ -12,6 +12,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 
 import 'qoder_cosy.dart';
+import 'qoder_sse_normalizer.dart';
 import 'qoder_direct_oauth.dart';
 
 class QoderInferenceException implements Exception {
@@ -179,6 +180,7 @@ class QoderDirect {
           status: response.statusCode,
         );
       }
+      final normalizer = QoderSseNormalizer(model);
       await for (final line in response
           .transform(const Utf8Decoder(allowMalformed: true))
           .transform(const LineSplitter())
@@ -187,6 +189,9 @@ class QoderDirect {
         if (!trimmed.startsWith('data:')) continue;
         final data = trimmed.substring(5).trim();
         if (data == '[DONE]') {
+          for (final chunk in normalizer.finish()) {
+            yield 'data: ${jsonEncode(chunk)}';
+          }
           yield 'data: [DONE]';
           return;
         }
@@ -197,11 +202,15 @@ class QoderDirect {
           continue;
         }
         if (decoded is! Map) continue;
-        final status = decoded['statusCodeValue'];
-        if (status is num && status != 200) {
+        final rawStatus = decoded['statusCodeValue'];
+        final status = rawStatus is num
+            ? rawStatus.toInt()
+            : int.tryParse('${rawStatus ?? ''}');
+        if (status != null && status != 200) {
           throw QoderInferenceException(
-            'Qoder returned an upstream error: ${decoded['body']}',
-            status: status.toInt(),
+            'Qoder returned HTTP-like status $status inside its stream. '
+            'Check account quota and model access.',
+            status: status,
           );
         }
         dynamic inner = decoded.containsKey('statusCodeValue')
@@ -219,22 +228,28 @@ class QoderDirect {
         }
         if (inner is! Map) continue;
         if (inner['error'] != null) {
-          throw QoderInferenceException('Qoder: ${inner['error']}');
+          throw QoderInferenceException('Qoder model stream error: '
+              '${inner['error']}');
         }
-        // Qoder frequently puts finish_reason on the delta itself.
-        final choices = inner['choices'];
-        if (choices is List) {
-          for (final choice in choices) {
-            if (choice is Map && choice['delta'] is Map) {
-              final delta = choice['delta'] as Map;
-              if (delta.containsKey('finish_reason') &&
-                  choice['finish_reason'] == null) {
-                choice['finish_reason'] = delta['finish_reason'];
-              }
-            }
-          }
+        final code = '${inner['code'] ?? ''}';
+        if (code == '110' || code == '112') {
+          throw const QoderInferenceException(
+            'Qoder account quota exhausted. Check your subscription.',
+            status: 429,
+          );
         }
-        yield 'data: ${jsonEncode(inner)}';
+        // Terminal and usage frames can arrive separately; never drop the
+        // usage-only frame or wait indefinitely for an upstream keepalive.
+        for (final chunk in normalizer.add(inner)) {
+          yield 'data: ${jsonEncode(chunk)}';
+        }
+        if (normalizer.isDone) {
+          yield 'data: [DONE]';
+          return;
+        }
+      }
+      for (final chunk in normalizer.finish()) {
+        yield 'data: ${jsonEncode(chunk)}';
       }
       yield 'data: [DONE]';
     } on TimeoutException {
