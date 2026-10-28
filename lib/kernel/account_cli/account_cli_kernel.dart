@@ -205,6 +205,12 @@ class AccountCliKernel
       if (turn.images.isNotEmpty)
         'Attached image bytes are not yet forwarded by this CLI adapter.',
     ].where((part) => part.trim().isNotEmpty).join('\n\n');
+    if (context.cwd != null && _validCwd == null) {
+      _append('\n\nThis runtime currently supports local project folders '
+          'only. No command was run.');
+      _finish(turn.id, interrupted: true);
+      return;
+    }
     final args = accountCliArguments(
       kind: kind,
       prompt: text,
@@ -214,10 +220,12 @@ class AccountCliKernel
     var exit = -1;
     final errors = StringBuffer();
     try {
+      // Pass user prompts directly to the native executable, never through
+      // cmd.exe/PowerShell interpolation (special characters are data).
       final process = await Process.start(
         accountCliExecutable(kind), args,
         workingDirectory: _validCwd,
-        runInShell: Platform.isWindows,
+        runInShell: false,
       );
       if (_disposed || _activeTurn != turn.id) {
         process.kill();
