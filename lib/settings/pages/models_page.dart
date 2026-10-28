@@ -11,7 +11,6 @@ import '../../ide/ide_menu.dart';
 import '../../icons/project_icon.dart';
 import '../../icons/project_icon_picker.dart';
 import '../../kernel/claude_code/claude_haiku.dart';
-import '../../kernel/account_cli/account_cli_login_io.dart';
 import '../../l10n/l10n.dart';
 import '../../models/codex/codex_api.dart' show codexClientVersion;
 import '../../models/codex/codex_quota_format.dart';
@@ -207,15 +206,6 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
       context.l10n.modelsNewProviderName,
     );
     if (mounted) setState(() => _open = id);
-  }
-
-  Future<void> _openCliAccountLogin(AccountLoginKind kind) async {
-    final opened = await openAccountLoginTerminal(kind);
-    if (!opened && mounted) {
-      setState(() => _oauthError =
-          'Could not open Windows sign-in terminal. '
-          'Run qoder or opencode auth login in your terminal.');
-    }
   }
 
   Future<void> _loadQoder() async {
@@ -733,41 +723,18 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                     ),
             ),
             SettingsRow(
-              label: 'OpenCode',
-              description: 'Use OpenCode provider OAuth in the official '
-                  'CLI. Its logged-in models are available under '
-                  'the OpenCode coding agent.',
-              trailing: IdeButton(
-                label: 'Open OAuth login',
-                secondary: true,
-                onPressed: () => unawaited(
-                  _openCliAccountLogin(AccountLoginKind.opencode),
-                ),
-              ),
+              label: 'OpenCode Zen / Go',
+              description: 'OpenCode is an agent application, not an '
+                  'account-based model OAuth service. Zen and Go currently '
+                  'require API keys according to their documentation. '
+                  'VietCode does not pretend this is an OAuth login.',
             ),
             SettingsRow(
-              label: 'Antigravity (community, unofficial)',
-              description: 'Optional Google OAuth through an OpenCode '
-                  'community plugin. Its maintainers warn of possible '
-                  'account restrictions. Setup is explicit, not automatic.',
-              trailing: SettingsButtons(
-                children: [
-                  IdeButton(
-                    label: 'Plugin instructions',
-                    secondary: true,
-                    onPressed: () => unawaited(openExternal(
-                      'https://github.com/zeklop/opencode-antigravity-auth',
-                    )),
-                  ),
-                  IdeButton(
-                    label: 'Sign in',
-                    secondary: true,
-                    onPressed: () => unawaited(
-                      _openCliAccountLogin(AccountLoginKind.antigravity),
-                    ),
-                  ),
-                ],
-              ),
+              label: 'Google Antigravity (research)',
+              description: '9Router and community OAuth implementations '
+                  'use unofficial Google client credentials and private '
+                  'endpoints. Native sign-in and model calls have not '
+                  'been validated. No CLI or 9Router is invoked.',
             ),
           ],
         ),
