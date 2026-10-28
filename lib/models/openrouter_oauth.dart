@@ -30,7 +30,7 @@ abstract final class OpenRouterOAuth {
     'code_challenge': challenge,
     'code_challenge_method': 'S256',
     'state': state,
-    'key_label': 'BaoCode',
+    'key_label': 'VietCode',
   });
 
   static Future<OpenRouterLogin> begin({
@@ -186,7 +186,7 @@ class OpenRouterLogin {
         const OpenRouterAuthException('Authorization was declined.'),
       );
       response.statusCode = HttpStatus.badRequest;
-      response.write('Authorization was declined. Return to BaoCode.');
+      response.write('Authorization was declined. Return to VietCode.');
       await response.close();
       return;
     }
@@ -210,14 +210,14 @@ class OpenRouterLogin {
       response.headers.set('content-security-policy', "default-src 'none'");
       response.write(
         '<!doctype html><meta charset="utf-8">'
-        '<title>BaoCode connected</title>'
-        '<p>OpenRouter authorized. Return to BaoCode.</p>',
+        '<title>VietCode connected</title>'
+        '<p>OpenRouter authorized. Return to VietCode.</p>',
       );
       await response.close();
       _complete(key);
     } catch (error) {
       response.statusCode = HttpStatus.badGateway;
-      response.write('Could not finish sign-in. Return to BaoCode.');
+      response.write('Could not finish sign-in. Return to VietCode.');
       await response.close();
       _completeError(
         error is OpenRouterAuthException
