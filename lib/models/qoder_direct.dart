@@ -38,7 +38,7 @@ class QoderDirect {
   QoderDirect({
     Uri? modelsEndpoint, Uri? chatEndpoint, HttpClient? client,
   }) : modelsEndpoint = modelsEndpoint ??
-           Uri.parse('https://api3.qoder.sh/algo/api/v2/model/list?Encode=1'),
+           Uri.parse('https://api3.qoder.sh/algo/api/v2/model/list'),
        chatEndpoint = chatEndpoint ??
            Uri.parse('https://api3.qoder.sh/algo/api/v2/service/pro/sse/'
                'agent_chat_generation?FetchKeys=llm_model_result'
