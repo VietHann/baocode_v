@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 
 import '../platform/data_dir.dart';
@@ -55,7 +54,7 @@ Future<ProcessResult> _run(
 /// the service `BaoCode`, by account. The secret goes on its stdin (in
 /// hex), never in a command line.
 class KeychainSecretStore implements SecretStore {
-  KeychainSecretStore({@visibleForTesting SecretCommand? run})
+  KeychainSecretStore({SecretCommand? run})
     : _command = run ?? _run;
 
   final SecretCommand _command;
@@ -116,7 +115,7 @@ class KeychainSecretStore implements SecretStore {
 /// The user's DPAPI on Windows, through PowerShell: each secret encrypted
 /// for the user, in a file of [directory].
 class DpapiSecretStore implements SecretStore {
-  DpapiSecretStore(this.directory, {@visibleForTesting SecretCommand? run})
+  DpapiSecretStore(this.directory, {SecretCommand? run})
     : _command = run ?? _run;
 
   final String directory;
@@ -176,7 +175,7 @@ class DpapiSecretStore implements SecretStore {
 class SecretServiceStore implements SecretStore {
   SecretServiceStore({
     required this.fallback,
-    @visibleForTesting SecretCommand? run,
+    SecretCommand? run,
   }) : _command = run ?? _run;
 
   final SecretStore fallback;
