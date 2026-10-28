@@ -21,7 +21,7 @@ import '../../models/featured_upstreams.dart';
 import '../../models/model_icons.dart';
 import '../../models/model_provider.dart';
 import '../../models/model_providers.dart';
-import '../../models/provider_presets.dart';
+import '../../models/openrouter_oauth.dart';
 import '../../models/model_runtime.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/codicons.dart';
@@ -126,6 +126,9 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
   /// The upstream whose page shows; the list when null.
   String? _open;
 
+  OpenRouterLogin? _openRouterLogin;
+  String? _oauthError;
+
   ModelProviders get _providers => widget.providers;
 
   /// The sites listed (see [ModelsSettingsPage.featured]).
@@ -169,6 +172,7 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
 
   @override
   void dispose() {
+    if (_openRouterLogin case final login?) unawaited(login.cancel());
     ModelsSettingsPage.reveal.removeListener(_reveal);
     if (_follows) FeaturedUpstream.known.removeListener(_relist);
     super.dispose();
@@ -189,20 +193,73 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
     if (mounted) setState(() => _open = id);
   }
 
-  Future<void> _addPreset(ProviderPreset preset) async {
-    final id = _providers.newId(preset.name);
-    await _providers.save(preset.create(id));
+  /// Opens the existing account OAuth screen for ChatGPT (no API key).
+  Future<void> _connectCodex() async {
+    final existing = _providers.providers
+        .where((provider) => provider.protocol == ProviderProtocol.codex)
+        .firstOrNull;
+    final id = existing?.id ?? _providers.newId('ChatGPT');
+    if (existing == null) {
+      await _providers.save(ModelProvider(
+        id: id, name: 'ChatGPT',
+        protocol: ProviderProtocol.codex,
+      ));
+    }
     if (mounted) setState(() => _open = id);
   }
 
-  List<IdeMenuAction> _presetEntries(ProviderPresetGroup group) => [
-    for (final preset in ProviderPreset.all)
-      if (preset.group == group)
-        IdeMenuAction(
-          preset.name,
-          onSelected: () => unawaited(_addPreset(preset)),
-        ),
-  ];
+  /// Official OpenRouter account login. OpenRouter issues a user-scoped
+  /// credential after OAuth; it is saved only in the system keychain.
+  Future<void> _connectOpenRouter() async {
+    if (_openRouterLogin != null) return;
+    if (mounted) setState(() => _oauthError = null);
+    try {
+      final login = await OpenRouterOAuth.begin();
+      // Observe asynchronous cancellation, including while launching browser.
+      unawaited(login.result.then<void>(
+        (_) {},
+        onError: (Object _) {},
+      ));
+      if (!mounted) {
+        await login.cancel();
+        return;
+      }
+      setState(() => _openRouterLogin = login);
+      final opened = await openExternal(login.url.toString());
+      if (!opened) {
+        await login.cancel();
+        throw const OpenRouterAuthException(
+          'Could not open a browser for OpenRouter OAuth.',
+        );
+      }
+      final credential = await login.result;
+      final existing = _providers.providers
+          .where((provider) =>
+              provider.host == 'openrouter.ai' &&
+              provider.protocol == ProviderProtocol.openaiChat)
+          .firstOrNull;
+      final id = existing?.id ?? _providers.newId('OpenRouter');
+      // Store the credential before adding an upstream; on keychain failure
+      // an unusable new provider is not presented as connected.
+      await _providers.setKey(id, credential);
+      if (existing == null) {
+        await _providers.save(ModelProvider(
+          id: id,
+          name: 'OpenRouter',
+          protocol: ProviderProtocol.openaiChat,
+          baseUrl: 'https://openrouter.ai/api/v1',
+          disableNonessentialTraffic: true,
+        ));
+      }
+      if (mounted) setState(() => _open = id);
+    } on OpenRouterAuthCancelled {
+      // User explicitly cancelled.
+    } on Object catch (error) {
+      if (mounted) setState(() => _oauthError = '$error');
+    } finally {
+      if (mounted) setState(() => _openRouterLogin = null);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -389,6 +446,69 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
           ],
         ),
         SettingsGroup(
+          title: 'Sign in with an account (OAuth)',
+          description: 'Use a browser-based account login; no API key to '
+              'copy or paste.',
+          children: [
+            SettingsRow(
+              label: 'ChatGPT (Codex)',
+              description: 'Sign in with your ChatGPT account, then '
+                  'choose the models available to it.',
+              trailing: IdeButton(
+                label: 'Sign in',
+                onPressed: () => unawaited(_connectCodex()),
+              ),
+            ),
+            SettingsRow(
+              label: 'OpenRouter',
+              description: _openRouterLogin == null
+                  ? 'Authorize in your browser using official OAuth PKCE. '
+                      'OpenRouter usage is billed to your account.'
+                  : 'Waiting for authorization in your browser…',
+              below: [
+                if (_oauthError case final message?)
+                  SelectableText(
+                    message,
+                    style: SettingsText.description.copyWith(
+                      color: themeColors['errorForeground'],
+                    ),
+                  ),
+              ],
+              trailing: _openRouterLogin == null
+                  ? IdeButton(
+                      label: 'Sign in',
+                      onPressed: () => unawaited(_connectOpenRouter()),
+                    )
+                  : SettingsButtons(
+                      children: [
+                        IdeButton(
+                          label: 'Copy login link',
+                          icon: Codicons.copy,
+                          secondary: true,
+                          onPressed: () => unawaited(Clipboard.setData(
+                            ClipboardData(
+                              text: _openRouterLogin!.url.toString(),
+                            ),
+                          )),
+                        ),
+                        IdeButton(
+                          label: 'Cancel',
+                          secondary: true,
+                          onPressed: () =>
+                              unawaited(_openRouterLogin!.cancel()),
+                        ),
+                      ],
+                    ),
+            ),
+            SettingsRow(
+              label: 'Qoder / OpenCode / Antigravity',
+              description: 'Not yet integrated. Their existing logins '
+                  'need separate supported agent adapters, not an '
+                  'API-key preset.',
+            ),
+          ],
+        ),
+        SettingsGroup(
           title: l10n.modelsProviders,
           children: [
             // Claude Code as set up on this machine: the CLI's alone, not
@@ -447,40 +567,11 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                 onOpen: () => setState(() => _open = provider.id),
               ),
             SettingsRow(
-              label: 'Connect AI service',
-              description: 'Choose ChatGPT account sign-in, an official '
-                  'API provider, or a local model server.',
-              trailing: SettingsButtons(
-                children: [
-                  SettingsDropdown(
-                    current: 'Choose service',
-                    semanticLabel: 'Choose AI service to connect',
-                    entries: () => [
-                      IdeMenuAction(
-                        'Account sign-in',
-                        submenu: _presetEntries(ProviderPresetGroup.account),
-                      ),
-                      IdeMenuAction(
-                        'OpenCode and gateways',
-                        submenu: _presetEntries(ProviderPresetGroup.gateway),
-                      ),
-                      IdeMenuAction(
-                        'Direct provider APIs',
-                        submenu: _presetEntries(ProviderPresetGroup.api),
-                      ),
-                      IdeMenuAction(
-                        'Local model servers',
-                        submenu: _presetEntries(ProviderPresetGroup.local),
-                      ),
-                    ],
-                  ),
-                  IdeButton(
-                    label: l10n.modelsAddProvider,
-                    icon: Codicons.add,
-                    secondary: true,
-                    onPressed: () => unawaited(_add()),
-                  ),
-                ],
+              label: l10n.modelsAddProvider,
+              trailing: IdeButton(
+                label: l10n.modelsAddProvider,
+                icon: Codicons.add,
+                onPressed: () => unawaited(_add()),
               ),
             ),
           ],
@@ -1169,20 +1260,6 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
             },
           ),
         ),
-        if (ProviderPreset.forProvider(provider) case final preset?
-            when preset.credentialsUrl != null)
-          SettingsRow(
-            label: 'Get API key',
-            description: 'Sign in on the provider website, create an API '
-                'key, then paste it below. Keys stay in your keychain.',
-            trailing: IdeButton(
-              label: 'Open provider website',
-              secondary: true,
-              onPressed: () => unawaited(
-                openExternal(preset.credentialsUrl!),
-              ),
-            ),
-          ),
         SettingsRow(
           label: l10n.modelsProtocol,
           description: l10n.modelsProtocolDescription,
