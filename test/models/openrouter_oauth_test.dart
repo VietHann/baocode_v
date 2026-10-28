@@ -1,16 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:baocode/models/codex/codex_oauth.dart';
+import 'package:baocode/models/oauth_pkce.dart';
 import 'package:baocode/models/openrouter_oauth.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('OAuth authorization is state-bound and uses S256 PKCE', () {
     const callback = 'http://127.0.0.1:49101/oauth/callback';
     final uri = OpenRouterOAuth.authorizeUrl(
       callback: Uri.parse(callback),
-      challenge: CodexPkce.challengeOf('verifier'),
+      challenge: OAuthPkce.challengeOf('verifier'),
       state: 'random-state',
     );
     expect(uri.scheme, 'https');
