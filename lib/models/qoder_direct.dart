@@ -9,6 +9,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:crypto/crypto.dart';
 
 import 'qoder_cosy.dart';
 import 'qoder_direct_oauth.dart';
@@ -334,7 +335,6 @@ class QoderDirect {
       }
     }
     final id = QoderCosy.uuid();
-    final record = QoderCosy.uuid();
     final config = selected.config;
     final maxAllowed = config['max_output_tokens'];
     final requested = body['max_tokens'] ?? body['max_completion_tokens'];
@@ -342,6 +342,22 @@ class QoderDirect {
     if (requested is int && requested > 0 && requested < maxTokens) {
       maxTokens = requested;
     }
+    // Stable session/record identifiers preserve queue and conversation state.
+    final session = sha256.convert(utf8.encode(
+      'qoder-session\u0000${account.userId}\u0000${selected.id}',
+    )).toString().substring(0, 16);
+    final recordParts = StringBuffer('qoder-record\u0000${selected.id}');
+    for (final msg in messages) {
+      recordParts.write('\u0000${msg['role']}');
+      recordParts.write('\u0000${msg['content']}');
+    }
+    if (body['tools'] is List) {
+      recordParts.write('\u0000${jsonEncode(body['tools'])}');
+    }
+    recordParts.write('\u0000mt=$maxTokens');
+    final record = sha256.convert(
+      utf8.encode(recordParts.toString()),
+    ).toString().substring(0, 16);
     final modelConfig = <String, Object?>{
       ...config,
       'key': selected.id,
@@ -350,7 +366,7 @@ class QoderDirect {
       'request_id': id,
       'request_set_id': record,
       'chat_record_id': record,
-      'session_id': account.machineId,
+      'session_id': session,
       'stream': true,
       'chat_task': 'FREE_INPUT',
       'is_reply': true,
