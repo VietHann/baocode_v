@@ -23,16 +23,32 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
       - name: Run provider tests
-        run: dart test test/models/openrouter_oauth_test.dart test/models/qoder_direct_oauth_test.dart test/models/copilot_direct_test.dart && flutter test test/kernel/account_cli_protocol_test.dart
+        run: dart test test/models/openrouter_oauth_test.dart test/models/qoder_direct_oauth_test.dart test/models/copilot_direct_test.dart && flutter test test/kernel/account_cli_protocol_test.dart test/kernel/copilot_direct_kernel_test.dart
       - name: Analyze modified Dart files
-        run: dart analyze lib/models/oauth_pkce.dart lib/models/openrouter_oauth.dart lib/models/qoder_direct_oauth.dart lib/models/copilot_direct.dart lib/kernel/copilot/copilot_direct_kernel.dart lib/kernel/account_cli/account_cli_protocol.dart lib/kernel/account_cli/account_cli_kernel.dart lib/kernel/account_cli/account_cli_login_io.dart lib/kernel/kernel_registry.dart lib/settings/pages/models_page.dart test/models/openrouter_oauth_test.dart test/models/qoder_direct_oauth_test.dart test/models/copilot_direct_test.dart test/kernel/account_cli_protocol_test.dart
+        run: dart analyze lib/models/oauth_pkce.dart lib/models/openrouter_oauth.dart lib/models/qoder_direct_oauth.dart lib/models/copilot_direct.dart lib/kernel/copilot/copilot_direct_kernel.dart lib/kernel/account_cli/account_cli_protocol.dart lib/kernel/account_cli/account_cli_kernel.dart lib/kernel/account_cli/account_cli_login_io.dart lib/kernel/kernel_registry.dart lib/settings/pages/models_page.dart test/models/openrouter_oauth_test.dart test/models/qoder_direct_oauth_test.dart test/models/copilot_direct_test.dart test/kernel/account_cli_protocol_test.dart test/kernel/copilot_direct_kernel_test.dart
       - name: Generate VietCode application icons
         shell: pwsh
         run: |
           python -m pip install Pillow
           python tool/vietcode_brand.py
+      - name: Verify branding assets and direct integration requirements
+        shell: pwsh
+        run: |
+          if (Test-Path "lib/models/nine_router_bridge.dart") {
+            throw "A 9Router gateway adapter must not be shipped"
+          }
+          python -c "from PIL import Image; im=Image.open('windows/runner/resources/app_icon.ico'); im.verify(); print('VietCode app icon OK')"
+          if (-not (Test-Path "assets/branding/app_icon.png")) {
+            throw "Missing user portrait inside Flutter assets"
+          }
       - name: Build Windows x64
         run: flutter build windows --release
+      - name: Verify Windows executable branding
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "build/windows/x64/runner/Release/baocode.exe")) {
+            throw "Missing stock Flutter runtime for VietCode"
+          }
       - name: Install Inno Setup 6
         shell: pwsh
         run: choco install innosetup --no-progress -y
