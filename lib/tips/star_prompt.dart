@@ -37,7 +37,7 @@ class StarPrompt {
   static const conversations = 3;
 
   /// Where the ask takes the user.
-  static final repository = Uri.parse('https://github.com/baocode-dev/baocode');
+  static final repository = Uri.parse('https://github.com/VietHann/baocode_v');
 
   final Workspace workspace;
   final TipStorage storage;
