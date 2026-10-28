@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../chat/chat_models.dart';
 import '../../models/copilot_direct.dart';
+import '../../models/secret_store.dart';
 import '../agent_kernel.dart';
 import '../kernel_event.dart';
 import '../kernel_types.dart';
@@ -15,7 +16,13 @@ import '../kernel_types.dart';
 class CopilotDirectKernel
     with KernelEventSource
     implements AgentKernel, SelectsModel {
-  CopilotDirectKernel(this.descriptor, this.context) {
+  CopilotDirectKernel(
+    this.descriptor,
+    this.context, {
+    CopilotDirect? provider,
+    SecretStore? secrets,
+  }) : _provider = provider ?? CopilotDirect(),
+       _secrets = secrets ?? SecretStore.instance {
     model = LocalChoice(
       [
         const KernelOption(
@@ -32,7 +39,8 @@ class CopilotDirectKernel
   @override
   final KernelDescriptor descriptor;
   final KernelContext context;
-  final CopilotDirect _provider = CopilotDirect();
+  final CopilotDirect _provider;
+  final SecretStore _secrets;
 
   @override
   late final LocalChoice model;
@@ -61,9 +69,9 @@ class CopilotDirectKernel
 
   Future<void> _loadModels() async {
     try {
-      final account = await _provider.saved();
+      final account = await _provider.saved(secrets: _secrets);
       if (account == null || _disposed) return;
-      final discovered = await _provider.models(account);
+      final discovered = await _provider.models(account, secrets: _secrets);
       if (discovered.isEmpty || _disposed) return;
       final selected = model.selected;
       model.options = [
@@ -116,7 +124,7 @@ class CopilotDirectKernel
   Future<void> _run(KernelTurn turn) async {
     final messageId = 'copilot-' + (++_itemCounter).toString();
     try {
-      final account = await _provider.saved();
+      final account = await _provider.saved(secrets: _secrets);
       if (account == null) {
         throw const CopilotDirectException(
           'GitHub Copilot is not connected. Open Settings → Models '
@@ -143,6 +151,7 @@ class CopilotDirectKernel
         account,
         model: model.selected ?? 'gpt-5-mini',
         messages: messages,
+        secrets: _secrets,
       );
       if (_disposed || _activeTurn != turn.id) return;
       emit(ItemUpserted(
