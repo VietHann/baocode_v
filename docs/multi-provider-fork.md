@@ -1,79 +1,88 @@
-# Multi-provider quick connect (VietHann fork)
+# BaoCode — Account OAuth integration (fork)
 
-BaoCode now offers Settings > Models > Connect AI service. It creates regular
-upstreams using the existing Anthropic and OpenAI proxy, rather than scraping
-browser cookies, borrowing auth files from another app, or imitating unofficial
-subscription clients.
+This fork prioritizes account-based authentication, not API-provider preset lists.
 
-## Authentication supported
+## Integrated: ChatGPT Codex
 
-| Type | Services | Login |
-| --- | --- | --- |
-| Account OAuth | ChatGPT (Codex) | Existing native sign-in and account management |
-| Provider-issued API key | OpenCode Zen, OpenCode Go, OpenRouter, OpenAI API, Anthropic API, Gemini API, DeepSeek, Moonshot/Kimi, Mistral, Groq, Cerebras, xAI, Together AI, Fireworks AI | Open the provider's console, create an API key, enter it in BaoCode |
-| Local, no key | Ollama, LM Studio, vLLM | Start the local server and fetch its models |
+Settings > Models > Sign in with an account > ChatGPT (Codex) > Add account.
+This reuses the existing BaoCode native OAuth PKCE, refresh, account
+switching and Codex proxy.
 
-The key is stored in the OS keychain by the existing SecretStore, not in
-settings.json. Each preset only saves a public base URL, the protocol and
-optional starter model IDs.
+## Integrated: OpenRouter OAuth PKCE
 
-To connect:
+Settings > Models > Sign in with an account > OpenRouter > Sign in.
 
-1. Open Settings > Models > Connect AI service > Choose service.
-2. Choose an account, gateway, direct API or local server.
-3. For ChatGPT choose Add account. For another provider click Open provider
-   website, issue an API key, paste it into the provider page and save.
-4. Fetch models or add models manually; test a model and select it.
+- Launches the official OpenRouter authorization page in your browser.
+- Uses random PKCE S256 verifier/challenge and an unpredictable state.
+- Receives browser callback over IPv4 loopback on a dynamically assigned port.
+- Rejects callbacks with mismatched state and exchanges the short-lived
+  authorization code with the official HTTPS endpoint.
+- Saves the issued account credential into the OS keychain automatically.
+- Does not ask the user to copy/paste an API key.
+- Opens the connected OpenRouter settings. Fetch models, enable desired
+  ones, and test before using them in a BaoCode chat.
+- Supports cancel, errors and timeout.
 
-OpenCode Zen uses the OpenAI Responses API. OpenCode Go supports OpenAI Chat
-Completions, Responses and Anthropic Messages, with per-model protocols
-configured for its starter models. New models may need their protocol edited
-after import. Starter model IDs can change or be excluded from your plan.
+OpenRouter's officially documented OAuth produces a user-scoped,
+revocable API key after authorization. This is NOT a ChatGPT-style
+access/refresh-token grant. OpenRouter model usage requires account credits.
 
-## Explicit limitations
+Source: https://openrouter.ai/docs/guides/overview/auth/oauth
 
-- Qoder Personal Access Tokens authenticate the official Qoder CLI, not a
-  documented third-party inference API. Qoder model subscription sign-in
-  inside BaoCode is NOT implemented.
-- Antigravity third-party OAuth is NOT implemented. Community clients often
-  use unofficial endpoints and may conflict with Google's terms.
-- OpenCode is a client. This integration uses the documented OpenCode
-  Zen/Go API keys, not arbitrary OpenCode local sessions or auth tokens.
-- Having a ChatGPT/Claude consumer subscription does not automatically
-  confer API key access. Provider billing, availability and limits apply.
+The login handshake is covered by an offline integration test with a local
+mock token endpoint. Live sign-in requires the user's own account.
 
-## Sources
+## Not integrated yet
 
-BaoCode upstream implementation:
-- lib/models/upstream.dart
-- lib/models/model_provider.dart
-- lib/models/proxy/
-- lib/models/codex/
+### Qoder account login
 
-Vendor documentation:
-- https://opencode.ai/docs/zen/
-- https://opencode.ai/docs/go/
-- https://opencode.ai/docs/providers/
+The Qoder CLI supports native browser login. Qoder's official Agent SDK
+can reuse that exact signed-in session with qodercliAuth(), no API key.
+However, it runs a full Qoder agent, rather than exposing an
+OpenAI-compatible inference backend. BaoCode needs a separate agent
+adapter supporting sessions, streaming events, permissions, and cancellation.
+
+References:
 - https://docs.qoder.com/cli/authentication
-- https://ai.google.dev/gemini-api/docs/openai
-- https://api-docs.deepseek.com/
-- https://openrouter.ai/developers
-- https://docs.mistral.ai/
-- https://console.groq.com/docs
+- https://docs.qoder.com/cli/sdk/authentication
+- https://docs.qoder.com/cli/sdk/how-it-works
 
-## Windows executable
+### OpenCode OAuth providers
 
-The fork-specific GitHub Actions workflow named Windows x64
-(multi-provider fork) builds a Windows release bundle on a Windows runner.
-Download the workflow artifact ZIP, unzip everything and run baocode.exe.
-Keep the data folder and flutter_windows.dll alongside the executable.
-This is a portable bundle, NOT a signed Windows installer.
+OpenCode supports provider OAuth within its client and exposes an official
+headless agent server with an HTTP/SDK interface. BaoCode would need an
+OpenCode agent-runtime adapter; a generic OpenCode Zen/Go subscription
+OAuth for arbitrary third-party model inference is not documented.
 
-To build locally on Windows:
+References:
+- https://opencode.ai/docs/providers
+- https://dev.opencode.ai/docs/server/
 
-    flutter pub get
-    flutter test test/models/provider_presets_test.dart
-    flutter build windows --release
+### Google Antigravity
 
-The original release workflow requires BaoCode upstream publishing secrets.
-This fork does not publish into BaoCode's release or update infrastructure.
+Open-source third-party Antigravity OAuth plugins exist. Their authors
+warn of unofficial endpoints, ToS restrictions and account suspensions.
+This fork does not copy browser cookies or private API client tokens, and
+does not claim authorized third-party account login.
+
+References:
+- https://github.com/NoeFabris/opencode-antigravity-auth
+- https://github.com/JoshRob297/opencode-antigravity-auth
+
+## Architecture follow-up
+
+Do not conflate three separate concepts:
+
+- AccountAuthAdapter: browser/device login, status, session lifecycle
+- AgentRuntimeAdapter: agent streams, tools, approvals, resume and cancel
+- ModelUpstreamAdapter: compatible inference endpoints and routing
+
+Account login alone does not make a foreign agent run inside BaoCode.
+Only surface an OAuth sign-in option after an authorized integration exists.
+
+## Build
+
+The fork-specific GitHub workflow Windows x64 (account OAuth fork) builds
+and uploads a portable ZIP artifact named BaoCode-oauth-windows-x64.
+Extract all files; baocode.exe alone lacks the required runtime.
+No upstream publishing secrets, no installer-signing claims.
