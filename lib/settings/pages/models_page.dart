@@ -1098,6 +1098,8 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
   CodexLogin? _login;
   String? _loginError;
   bool _refreshingQuota = false;
+  bool _nativeRefreshing = false;
+  String? _nativeError;
 
   ModelProviders get _providers => widget.providers;
   ModelProvider get _provider => widget.provider;
@@ -1107,8 +1109,11 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
   void initState() {
     super.initState();
     _search.addListener(() => setState(() {}));
-    unawaited(_readKey());
-    if (_provider.protocol.usesAccounts && _provider.accounts.isNotEmpty) {
+    if (!isNativeCopilot(_provider) && !isNativeQoder(_provider)) {
+      unawaited(_readKey());
+    }
+    if (_provider.protocol == ProviderProtocol.codex &&
+        _provider.accounts.isNotEmpty) {
       unawaited(_refreshQuota());
     }
   }
@@ -1120,6 +1125,93 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
     _closed.complete();
     _search.dispose();
     super.dispose();
+  }
+
+  Future<void> _nativeRefreshModels() async {
+    if (_nativeRefreshing || !isNativeCopilot(_providerNow)) return;
+    setState(() {
+      _nativeRefreshing = true;
+      _nativeError = null;
+    });
+    try {
+      final oauth = CopilotDirect();
+      final account = await oauth.saved(secrets: _providers.secrets);
+      if (account == null) {
+        throw const CopilotDirectException(
+          'GitHub Copilot is signed out. Sign in again from Models.',
+        );
+      }
+      final models = await oauth.models(account, secrets: _providers.secrets);
+      await NativeAccountUpstreams.upsertCopilot(
+        _providers, account, models);
+    } on Object catch (error) {
+      if (mounted) setState(() => _nativeError = '$error');
+    } finally {
+      if (mounted) setState(() => _nativeRefreshing = false);
+    }
+  }
+
+  Future<void> _nativeSignOut() async {
+    final provider = _providerNow;
+    if (isNativeCopilot(provider)) {
+      await CopilotDirect().signOut(secrets: _providers.secrets);
+    } else if (isNativeQoder(provider)) {
+      await QoderDirectOAuth().signOut(secrets: _providers.secrets);
+    } else {
+      return;
+    }
+    widget.onBack();
+    await _providers.remove(provider.id);
+  }
+
+  Widget _nativeAccounts(BuildContext context) {
+    final provider = _providerNow;
+    final qoder = isNativeQoder(provider);
+    return SettingsGroup(
+      title: context.l10n.modelsAccounts,
+      description: qoder
+          ? 'Qoder OAuth is connected, but its model transport is '
+              'not implemented yet. No usable models are advertised.'
+          : 'Signed-in GitHub account. Model credentials are '
+              'refreshed automatically in VietCode.',
+      children: [
+        for (final account in provider.accounts)
+          SettingsRow(
+            label: account.displayName,
+            description: qoder
+                ? 'Qoder account · Native OAuth (experimental)'
+                : 'GitHub Copilot · OAuth connected',
+          ),
+        if (_nativeError case final error?)
+          SettingsRow(
+            label: 'Connection error',
+            description: error,
+          ),
+        SettingsRow(
+          label: qoder ? 'Model support' : 'Models available to this account',
+          description: qoder
+              ? 'Qoder model requests require native COSY support, '
+                  'which is not yet implemented.'
+              : '${provider.models.length} models discovered. Use the '
+                  'checkboxes below to enable models in the global picker.',
+          trailing: SettingsButtons(children: [
+            if (!qoder)
+              IdeButton(
+                label: _nativeRefreshing ? 'Refreshing…' : 'Refresh models',
+                secondary: true,
+                onPressed: _nativeRefreshing
+                    ? null
+                    : () => unawaited(_nativeRefreshModels()),
+              ),
+            IdeButton(
+              label: 'Sign out',
+              secondary: true,
+              onPressed: () => unawaited(_nativeSignOut()),
+            ),
+          ]),
+        ),
+      ],
+    );
   }
 
   Future<void> _addAccount() async {
@@ -1376,31 +1468,38 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
         const SizedBox(height: 8),
         Text(provider.name, style: SettingsText.title),
         const SizedBox(height: 16),
-        _connection(context),
-        if (provider.protocol.usesAccounts) ...[
+        if (!isNativeCopilot(provider) && !isNativeQoder(provider))
+          _connection(context),
+        if (isNativeCopilot(provider) || isNativeQoder(provider)) ...[
+          _nativeAccounts(context),
+        ] else if (provider.protocol == ProviderProtocol.codex) ...[
           const SizedBox(height: 16),
           ListenableBuilder(
             listenable: _codex,
             builder: (context, _) => _accounts(context),
           ),
         ],
-        const SizedBox(height: 16),
-        _models(context),
-        const SizedBox(height: 16),
-        _Folding(
+        if (!isNativeQoder(provider)) ...[
+          const SizedBox(height: 16),
+          _models(context),
+          const SizedBox(height: 16),
+          _Folding(
           title: l10n.modelsRoles,
           description: l10n.modelsRolesDescription,
           open: _rolesOpen,
           onToggle: () => setState(() => _rolesOpen = !_rolesOpen),
           children: _roles(context),
-        ),
-        const SizedBox(height: 16),
-        _Folding(
+          ),
+        ],
+        if (!isNativeCopilot(provider) && !isNativeQoder(provider)) ...[
+          const SizedBox(height: 16),
+          _Folding(
           title: l10n.modelsAdvanced,
           open: _advancedOpen,
           onToggle: () => setState(() => _advancedOpen = !_advancedOpen),
           children: _advanced(context),
-        ),
+          ),
+        ],
       ],
     );
   }
@@ -1757,12 +1856,13 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
                         ? null
                         : () => unawaited(_fetch()),
                   ),
-                  IdeButton(
-                    label: l10n.modelsAddModel,
-                    icon: Codicons.add,
-                    secondary: true,
-                    onPressed: () => unawaited(_editModel()),
-                  ),
+                  if (!isNativeCopilot(provider))
+                    IdeButton(
+                      label: l10n.modelsAddModel,
+                      icon: Codicons.add,
+                      secondary: true,
+                      onPressed: () => unawaited(_editModel()),
+                    ),
                 ],
               ),
             ],
