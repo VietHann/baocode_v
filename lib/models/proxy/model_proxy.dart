@@ -10,6 +10,8 @@ import '../codex/codex_api.dart';
 import '../codex/codex_service.dart';
 import '../launch_environment.dart';
 import '../model_provider.dart';
+import '../native_account_upstreams.dart';
+import '../copilot_direct.dart';
 import '../upstream.dart';
 import 'prompt_cache_key.dart';
 import 'translate/openai_chat_request.dart';
@@ -282,14 +284,32 @@ class ModelProxy {
       if (opened == null) return;
       lines = opened;
     } else {
-      final url = UpstreamUrls.conversation(provider);
+      // An account-authenticated provider must use a fresh account token,
+      // never a static upstream key. The proxy is internal to VietCode; no
+      // Qoder/OpenCode CLI or 9Router gateway is contacted.
+      final copilot = isNativeCopilot(provider);
+      final url = copilot
+          ? CopilotDirect().completionEndpoint
+          : UpstreamUrls.conversation(provider);
       if (url == null) {
         return _fail(response, 400, '${provider.name} has no valid base URL');
       }
       final client = await _upstream();
       final upstreamRequest = await client.postUrl(url);
-      final key = await _key(provider.id);
-      upstreamHeaders(provider, key).forEach(upstreamRequest.headers.set);
+      if (copilot) {
+        final auth = CopilotDirect();
+        final account = await auth.saved();
+        if (account == null || provider.accounts.isEmpty) {
+          return _fail(response, 401,
+              'GitHub Copilot is signed out. Sign in under Settings > Models.');
+        }
+        final refreshed = await auth.ensureToken(account);
+        CopilotDirect.applyRequestHeaders(
+            upstreamRequest, refreshed.copilotToken);
+      } else {
+        final key = await _key(provider.id);
+        upstreamHeaders(provider, key).forEach(upstreamRequest.headers.set);
+      }
       // The user's own headers after them: a name that may not be set is
       // left out, so none of the above is overwritten.
       customUpstreamHeaders(
