@@ -747,16 +747,17 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                       (_qoderAccount!.email.isNotEmpty
                           ? _qoderAccount!.email
                           : _qoderAccount!.userId) +
-                      '. VietCode stores your Qoder account in the OS '
-                      'keychain. Native model execution is not validated yet.'
+                      '. Qoder OAuth is stored in the OS keychain. '
+                      'Open Qoder under Upstreams to refresh actual models '
+                      'and test experimental signed inference.'
                   : _qoderLogin != null
                   ? 'Complete the Qoder device authorization in your '
                       'browser. VietCode polls Qoder directly; no CLI '
                       'or 9Router installation is required.'
                   : 'Sign in directly with your Qoder account in a '
                       'browser (PKCE device OAuth, no CLI, no API key). '
-                      'This is an experimental login; model calls '
-                      'require separate integration.',
+                      'After sign-in, VietCode retrieves a COSY-signed '
+                      'model catalog directly from Qoder (experimental).',
               below: [
                 if (_qoderError case final message?)
                   SelectableText(
