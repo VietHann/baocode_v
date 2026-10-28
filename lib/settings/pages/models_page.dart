@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -23,6 +24,7 @@ import '../../models/model_provider.dart';
 import '../../models/model_providers.dart';
 import '../../models/openrouter_oauth.dart';
 import '../../models/qoder_direct_oauth.dart';
+import '../../models/qoder_direct.dart';
 import '../../models/copilot_direct.dart';
 import '../../models/native_account_upstreams.dart';
 import '../../models/upstream.dart' show mergeModelList;
@@ -1158,6 +1160,11 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
     if (!isNativeCopilot(_provider) && !isNativeQoder(_provider)) {
       unawaited(_readKey());
     }
+    if (isNativeQoder(_provider)) {
+      // Existing OAuth accounts from earlier builds get a real COSY catalog
+      // lookup when the provider page is opened.
+      unawaited(_nativeRefreshModels());
+    }
     if (_provider.protocol == ProviderProtocol.codex &&
         _provider.accounts.isNotEmpty) {
       unawaited(_refreshQuota());
@@ -1174,23 +1181,41 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
   }
 
   Future<void> _nativeRefreshModels() async {
-    if (_nativeRefreshing || !isNativeCopilot(_providerNow)) return;
+    if (_nativeRefreshing ||
+        !(isNativeCopilot(_providerNow) || isNativeQoder(_providerNow))) {
+      return;
+    }
     setState(() {
       _nativeRefreshing = true;
       _nativeError = null;
     });
     try {
-      final oauth = CopilotDirect();
-      final account = await oauth.saved(secrets: _providers.secrets);
-      if (account == null) {
-        throw const CopilotDirectException(
-          'GitHub Copilot is signed out. Sign in again from Models.',
-        );
+      if (isNativeQoder(_providerNow)) {
+        final account = await QoderDirectOAuth().saved(
+          secrets: _providers.secrets);
+        if (account == null) {
+          throw const QoderInferenceException(
+            'Qoder account is signed out. Sign in again under Models.',
+          );
+        }
+        final models = await QoderDirect().models(account, force: true);
+        await NativeAccountUpstreams.upsertQoderModels(
+          _providers, account, models);
+      } else {
+        final oauth = CopilotDirect();
+        final account = await oauth.saved(secrets: _providers.secrets);
+        if (account == null) {
+          throw const CopilotDirectException(
+            'GitHub Copilot is signed out. Sign in again from Models.',
+          );
+        }
+        final models = await oauth.models(account, secrets: _providers.secrets);
+        await NativeAccountUpstreams.upsertCopilot(
+          _providers, account, models);
       }
-      final models = await oauth.models(account, secrets: _providers.secrets);
-      await NativeAccountUpstreams.upsertCopilot(
-        _providers, account, models);
+      _providers.reportError(_provider.id, null);
     } on Object catch (error) {
+      _providers.reportError(_provider.id, '$error');
       if (mounted) setState(() => _nativeError = '$error');
     } finally {
       if (mounted) setState(() => _nativeRefreshing = false);
@@ -1216,8 +1241,8 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
     return SettingsGroup(
       title: context.l10n.modelsAccounts,
       description: qoder
-          ? 'Qoder OAuth is connected, but its model transport is '
-              'not implemented yet. No usable models are advertised.'
+          ? 'Qoder OAuth · Native COSY signed model catalog and inference. '
+              'Experimental, unofficial and subject to account quota.'
           : 'Signed-in GitHub account. Model credentials are '
               'refreshed automatically in VietCode.',
       children: [
@@ -1234,21 +1259,20 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
             description: error,
           ),
         SettingsRow(
-          label: qoder ? 'Model support' : 'Models available to this account',
-          description: qoder
-              ? 'Qoder model requests require native COSY support, '
-                  'which is not yet implemented.'
+          label: 'Models available to this account',
+          description: qoder && provider.models.isEmpty
+              ? 'No verified Qoder models yet. Click Refresh models to '
+                  'request your actual catalog via signed COSY.'
               : '${provider.models.length} models discovered. Use the '
                   'checkboxes below to enable models in the global picker.',
           trailing: SettingsButtons(children: [
-            if (!qoder)
-              IdeButton(
-                label: _nativeRefreshing ? 'Refreshing…' : 'Refresh models',
-                secondary: true,
-                onPressed: _nativeRefreshing
-                    ? null
-                    : () => unawaited(_nativeRefreshModels()),
-              ),
+            IdeButton(
+              label: _nativeRefreshing ? 'Refreshing…' : 'Refresh models',
+              secondary: true,
+              onPressed: _nativeRefreshing
+                  ? null
+                  : () => unawaited(_nativeRefreshModels()),
+            ),
             IdeButton(
               label: 'Sign out',
               secondary: true,
@@ -1554,7 +1578,7 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
             builder: (context, _) => _accounts(context),
           ),
         ],
-        if (!isNativeQoder(provider)) ...[
+        if (!isNativeQoder(provider) || provider.models.isNotEmpty) ...[
           const SizedBox(height: 16),
           _models(context),
           const SizedBox(height: 16),
@@ -1931,7 +1955,8 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
                         ? null
                         : () => unawaited(_fetch()),
                   ),
-                  if (!isNativeCopilot(provider))
+                  if (!isNativeCopilot(provider) &&
+                      !isNativeQoder(provider))
                     IdeButton(
                       label: l10n.modelsAddModel,
                       icon: Codicons.add,
@@ -1951,7 +1976,8 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
           for (final model in shown)
             _ModelRow(
               model: model,
-              catalogManaged: isNativeCopilot(provider),
+              catalogManaged: isNativeCopilot(provider) ||
+                  isNativeQoder(provider),
               endpoint: switch (provider.protocolOf(model)) {
                 final protocol when protocol != provider.protocol => protocol,
                 _ => null,
