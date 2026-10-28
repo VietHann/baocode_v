@@ -67,7 +67,8 @@ abstract final class OpenRouterOAuth {
     HttpClient? client,
   }) async {
     final uri = endpoint ?? exchangeEndpoint;
-    if (uri.scheme != 'https' && !uri.isLoopback) {
+    if (uri.scheme != 'https' &&
+        !(uri.scheme == 'http' && uri.host == '127.0.0.1')) {
       throw const OpenRouterAuthException('Invalid OAuth token endpoint.');
     }
     final owned = client == null;
