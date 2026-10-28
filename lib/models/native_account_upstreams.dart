@@ -64,6 +64,37 @@ abstract final class NativeAccountUpstreams {
     return provider;
   }
 
+  /// Show a successfully authorized GitHub account even if its model
+  /// catalog is unavailable (network error, expired subscription, etc.).
+  /// The upstream remains INCOMPLETE until real model IDs are fetched; no
+  /// fake default model is added to the global picker.
+  static Future<ModelProvider> upsertCopilotAccountOnly(
+    ModelProviders store,
+    CopilotAccount account,
+  ) async {
+    final existing = store.provider(nativeCopilotProviderId);
+    final provider = ModelProvider(
+      id: nativeCopilotProviderId,
+      name: existing?.name ?? 'GitHub Copilot',
+      protocol: ProviderProtocol.openaiChat,
+      baseUrl: 'https://api.githubcopilot.com',
+      enabled: existing?.enabled ?? true,
+      disableNonessentialTraffic: true,
+      promptCacheKey: false,
+      models: existing?.models ?? const [],
+      accounts: [
+        ProviderAccount(
+          id: account.login.isNotEmpty ? account.login : 'github-copilot',
+          email: account.login.isNotEmpty ? account.login : null,
+        ),
+      ],
+      roles: existing?.roles ?? const ProviderRoles(),
+      icon: existing?.icon,
+    );
+    await store.save(provider);
+    return provider;
+  }
+
   /// Qoder's device OAuth token has been obtained, but its COSY inference
   /// adapter has NOT been written. Keep it visible under Upstreams as an
   /// account-only connection; no fake model selection, endpoint or model.
