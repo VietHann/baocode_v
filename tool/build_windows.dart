@@ -172,6 +172,13 @@ Future<void> main(List<String> arguments) async {
   _step('Checking the bundle');
   _checkBundle(bundle, _required);
 
+  // Public-facing Windows executable. Preserve baocode.exe too so legacy
+  // browser host, update/install integrations and old launch paths continue
+  // working, while Start Menu/Desktop/taskbar use VietCode.exe.
+  final publicExe = File('${bundle.path}\\VietCode.exe');
+  File('${bundle.path}\\baocode.exe').copySync(publicExe.path);
+  _checkBundle(bundle, ['VietCode.exe']);
+
   if (stockEngine) {
     _step(
       'Keeping Flutter\'s own engine'
