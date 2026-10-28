@@ -85,15 +85,24 @@ class CopilotDirectKernel
 
   @override
   void send(KernelTurn turn) {
-    if (_disposed || !_sent.add(turn.id)) return;
+    if (_disposed || _sent.contains(turn.id)) return;
     if (_activeTurn != null) {
+      // An overlapping turn must have a matching start/end event, not an
+      // orphan message that leaves its user bubble spinning indefinitely.
+      _sent.add(turn.id);
+      emit(TurnStarted(nextSeq, turn.id));
+      final noticeId = 'busy-' + turn.id;
       emit(ItemUpserted(
-        nextSeq, 'busy-' + turn.id,
+        nextSeq, noticeId,
         const AssistantTextItem(
-            'Wait for the current Copilot reply or stop it first.'),
+          'Copilot is still answering. Stop the active reply first.',
+        ),
       ));
+      emit(ItemCompleted(nextSeq, noticeId));
+      emit(TurnEnded(nextSeq, turn.id, interrupted: true));
       return;
     }
+    _sent.add(turn.id);
     _activeTurn = turn.id;
     _startedAt = DateTime.now();
     emit(TurnStarted(nextSeq, turn.id));
@@ -114,11 +123,17 @@ class CopilotDirectKernel
           'and sign in with GitHub using the device OAuth code.',
         );
       }
+      // Never silently discard an attachment while presenting a normal
+      // answer. This text-only adapter has no image transport yet.
+      if (turn.images.isNotEmpty) {
+        throw const CopilotDirectException(
+          'GitHub Copilot Direct currently supports text only. '
+          'Remove image attachments to send this turn.',
+        );
+      }
       final user = [
         turn.text,
         ...turn.notes,
-        if (turn.images.isNotEmpty)
-          'Attached images are not forwarded by this model adapter.',
       ].where((s) => s.trim().isNotEmpty).join('\n\n');
       final messages = [
         ..._messages,
