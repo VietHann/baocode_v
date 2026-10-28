@@ -294,8 +294,10 @@ class ModelProxy {
       if (url == null) {
         return _fail(response, 400, '${provider.name} has no valid base URL');
       }
-      final client = await _upstream();
-      final upstreamRequest = await client.postUrl(url);
+      // Check account and refresh the short-lived model credential BEFORE
+      // opening an HTTP request. Otherwise an early 401 leaves an open
+      // HttpClientRequest and consumes connections.
+      String? copilotToken;
       if (copilot) {
         final auth = CopilotDirect();
         final account = await auth.saved();
@@ -304,8 +306,12 @@ class ModelProxy {
               'GitHub Copilot is signed out. Sign in under Settings > Models.');
         }
         final refreshed = await auth.ensureToken(account);
-        CopilotDirect.applyRequestHeaders(
-            upstreamRequest, refreshed.copilotToken);
+        copilotToken = refreshed.copilotToken;
+      }
+      final client = await _upstream();
+      final upstreamRequest = await client.postUrl(url);
+      if (copilot) {
+        CopilotDirect.applyRequestHeaders(upstreamRequest, copilotToken!);
       } else {
         final key = await _key(provider.id);
         upstreamHeaders(provider, key).forEach(upstreamRequest.headers.set);
