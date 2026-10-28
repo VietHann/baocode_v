@@ -76,32 +76,29 @@ class BrandLogo extends StatelessWidget {
   }
 }
 
-/// BaoCode's own mark, without the app icon's tile
-/// (`assets/branding/logo.svg`): [size] wide, in [color] (the icons' around
-/// it when null), as a codicon is drawn.
+/// The VietCode app portrait, reused wherever the in-app app mark appears.
+/// Keep the historical widget name for source compatibility with older code.
 class BaoCodeLogo extends StatelessWidget {
   const BaoCodeLogo({super.key, this.size = 16, this.color});
 
-  static const asset = 'assets/branding/logo.svg';
-
+  static const asset = 'assets/branding/app_icon.png';
   final double size;
+
+  /// Kept for compatibility with existing call sites. A photo is not tinted.
   final Color? color;
 
   @override
-  Widget build(BuildContext context) {
-    final color = this.color ?? IconTheme.of(context).color;
-    return SizedBox.square(
-      dimension: size,
-      child: Center(
-        child: SvgPicture.asset(
-          asset,
-          // 56 by 42: as wide as the square, a little in from its sides.
-          width: size * .875,
-          colorFilter: color == null
-              ? null
-              : ColorFilter.mode(color, BlendMode.srcIn),
-        ),
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: size,
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(size * .20),
+      child: Image.asset(
+        asset,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        filterQuality: FilterQuality.medium,
       ),
-    );
-  }
+    ),
+  );
 }
