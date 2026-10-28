@@ -11,6 +11,7 @@ import '../../ide/ide_menu.dart';
 import '../../icons/project_icon.dart';
 import '../../icons/project_icon_picker.dart';
 import '../../kernel/claude_code/claude_haiku.dart';
+import '../../kernel/account_cli/account_cli_login_io.dart';
 import '../../l10n/l10n.dart';
 import '../../models/codex/codex_api.dart' show codexClientVersion;
 import '../../models/codex/codex_quota_format.dart';
@@ -191,6 +192,15 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
       context.l10n.modelsNewProviderName,
     );
     if (mounted) setState(() => _open = id);
+  }
+
+  Future<void> _openCliAccountLogin(AccountLoginKind kind) async {
+    final opened = await openAccountLoginTerminal(kind);
+    if (!opened && mounted) {
+      setState(() => _oauthError =
+          'Could not open Windows sign-in terminal. '
+          'Run qoder or opencode auth login in your terminal.');
+    }
   }
 
   /// Opens the existing account OAuth screen for ChatGPT (no API key).
@@ -501,10 +511,54 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                     ),
             ),
             SettingsRow(
-              label: 'Qoder / OpenCode / Antigravity',
-              description: 'Not yet integrated. Their existing logins '
-                  'need separate supported agent adapters, not an '
-                  'API-key preset.',
+              label: 'Qoder',
+              description: 'Native Qoder account login. Install Qoder CLI, '
+                  'sign in in the terminal, then choose Qoder as the '
+                  'coding agent in a new conversation.',
+              trailing: IdeButton(
+                label: 'Sign in with Qoder',
+                secondary: true,
+                onPressed: () => unawaited(
+                  _openCliAccountLogin(AccountLoginKind.qoder),
+                ),
+              ),
+            ),
+            SettingsRow(
+              label: 'OpenCode',
+              description: 'Use OpenCode provider OAuth in the official '
+                  'CLI. Its logged-in models are available under '
+                  'the OpenCode coding agent.',
+              trailing: IdeButton(
+                label: 'Open OAuth login',
+                secondary: true,
+                onPressed: () => unawaited(
+                  _openCliAccountLogin(AccountLoginKind.opencode),
+                ),
+              ),
+            ),
+            SettingsRow(
+              label: 'Antigravity (community, unofficial)',
+              description: 'Optional Google OAuth through an OpenCode '
+                  'community plugin. Its maintainers warn of possible '
+                  'account restrictions. Setup is explicit, not automatic.',
+              trailing: SettingsButtons(
+                children: [
+                  IdeButton(
+                    label: 'Plugin instructions',
+                    secondary: true,
+                    onPressed: () => unawaited(openExternal(
+                      'https://github.com/zeklop/opencode-antigravity-auth',
+                    )),
+                  ),
+                  IdeButton(
+                    label: 'Sign in',
+                    secondary: true,
+                    onPressed: () => unawaited(
+                      _openCliAccountLogin(AccountLoginKind.antigravity),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
