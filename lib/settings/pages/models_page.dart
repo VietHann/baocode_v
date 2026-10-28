@@ -139,6 +139,8 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
   CopilotAccount? _copilotAccount;
   String? _copilotError;
   int? _copilotModelCount;
+  bool _copilotTesting = false;
+  String? _copilotTestResult;
 
   ModelProviders get _providers => widget.providers;
 
@@ -307,6 +309,44 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
       if (mounted) setState(() => _copilotError = '$error');
     } finally {
       if (mounted) setState(() => _copilotLogin = null);
+    }
+  }
+
+  Future<void> _testCopilot() async {
+    final account = _copilotAccount;
+    if (account == null || _copilotTesting) return;
+    setState(() {
+      _copilotError = null;
+      _copilotTestResult = null;
+      _copilotTesting = true;
+    });
+    try {
+      final models = await _copilotOAuth.models(
+        account, secrets: _providers.secrets,
+      );
+      if (models.isEmpty) {
+        throw const CopilotDirectException(
+          'No models currently available to this account.',
+        );
+      }
+      // Choose a low-cost testing model if the account has it.
+      final model = models.contains('gpt-5-mini')
+          ? 'gpt-5-mini'
+          : models.first;
+      final reply = await _copilotOAuth.complete(
+        account,
+        model: model,
+        messages: const [
+          {'role': 'user', 'content': 'Reply with OK.'},
+        ],
+        secrets: _providers.secrets,
+      );
+      if (mounted) setState(() => _copilotTestResult =
+          'Direct model response (' + model + '): ' + reply);
+    } on Object catch (error) {
+      if (mounted) setState(() => _copilotError = '$error');
+    } finally {
+      if (mounted) setState(() => _copilotTesting = false);
     }
   }
 
@@ -693,6 +733,11 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                       color: themeColors['errorForeground'],
                     ),
                   ),
+                if (_copilotTestResult case final message?)
+                  SelectableText(
+                    message,
+                    style: SettingsText.description,
+                  ),
               ],
               trailing: _copilotLogin != null
                   ? SettingsButtons(children: [
@@ -711,12 +756,23 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                       ),
                     ])
                   : _copilotAccount != null
-                  ? IdeButton(
-                      label: 'Sign out',
-                      secondary: true,
-                      onPressed: () =>
-                          unawaited(_disconnectCopilot()),
-                    )
+                  ? SettingsButtons(children: [
+                      IdeButton(
+                        label: _copilotTesting
+                            ? 'Testing…'
+                            : 'Test model (uses quota)',
+                        secondary: true,
+                        onPressed: _copilotTesting
+                            ? null
+                            : () => unawaited(_testCopilot()),
+                      ),
+                      IdeButton(
+                        label: 'Sign out',
+                        secondary: true,
+                        onPressed: () =>
+                            unawaited(_disconnectCopilot()),
+                      ),
+                    ])
                   : IdeButton(
                       label: 'Sign in with GitHub',
                       onPressed: () => unawaited(_connectCopilot()),
