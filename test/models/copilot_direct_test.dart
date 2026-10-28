@@ -112,4 +112,50 @@ void main() {
       throwsA(isA<CopilotDirectException>()),
     );
   });
+
+  test('Rejects OAuth device verification pages outside github.com',
+      () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((request) async {
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(jsonEncode({
+        'device_code': 'device-1',
+        'user_code': '1234',
+        'verification_uri': 'https://github-attacker.example/login/device',
+      }));
+      await request.response.close();
+    });
+    try {
+      final provider = CopilotDirect(
+        deviceEndpoint: Uri.parse(
+          'http://127.0.0.1:' + server.port.toString() + '/device',
+        ),
+      );
+      await expectLater(
+        provider.begin(), throwsA(isA<CopilotDirectException>()),
+      );
+    } finally {
+      await server.close(force: true);
+    }
+  });
+
+  test('OAuth token expiry information is retained in encrypted storage',
+      () async {
+    final store = MemorySecretStore();
+    final provider = CopilotDirect();
+    final expiry = DateTime.utc(2030, 1, 1);
+    await provider.save(CopilotAccount(
+      githubToken: 'test-secret',
+      copilotToken: 'short-lived',
+      copilotExpiry: expiry,
+      login: 'user',
+    ), secrets: store);
+    final account = await provider.saved(secrets: store);
+    expect(account?.githubToken, 'test-secret');
+    expect(account?.copilotToken, 'short-lived');
+    expect(account?.copilotExpiry, expiry);
+    await provider.signOut(secrets: store);
+    expect(await provider.saved(secrets: store), isNull);
+  });
+
 }
