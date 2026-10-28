@@ -27,6 +27,10 @@ def main() -> None:
     for path, size in (
         ("assets/branding/app_icon.png", 128),
         ("web/favicon.png", 256),
+        ("web/icons/Icon-192.png", 192),
+        ("web/icons/Icon-512.png", 512),
+        ("web/icons/Icon-maskable-192.png", 192),
+        ("web/icons/Icon-maskable-512.png", 512),
         ("site/icon.png", 256),
     ):
         write_png(square, path, size)
