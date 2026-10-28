@@ -23,6 +23,7 @@ import '../../models/model_icons.dart';
 import '../../models/model_provider.dart';
 import '../../models/model_providers.dart';
 import '../../models/openrouter_oauth.dart';
+import '../../models/qoder_direct_oauth.dart';
 import '../../models/model_runtime.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/codicons.dart';
@@ -129,6 +130,10 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
 
   OpenRouterLogin? _openRouterLogin;
   String? _oauthError;
+  final QoderDirectOAuth _qoderOAuth = QoderDirectOAuth();
+  QoderDeviceLogin? _qoderLogin;
+  QoderAccount? _qoderAccount;
+  String? _qoderError;
 
   ModelProviders get _providers => widget.providers;
 
@@ -149,6 +154,7 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
     super.initState();
     _reveal();
     ModelsSettingsPage.reveal.addListener(_reveal);
+    unawaited(_loadQoder());
     if (_follows) FeaturedUpstream.known.addListener(_relist);
     unawaited(
       _featured.then((listed) {
@@ -174,6 +180,7 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
   @override
   void dispose() {
     if (_openRouterLogin case final login?) unawaited(login.cancel());
+    if (_qoderLogin case final login?) unawaited(login.cancel());
     ModelsSettingsPage.reveal.removeListener(_reveal);
     if (_follows) FeaturedUpstream.known.removeListener(_relist);
     super.dispose();
@@ -201,6 +208,49 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
           'Could not open Windows sign-in terminal. '
           'Run qoder or opencode auth login in your terminal.');
     }
+  }
+
+  Future<void> _loadQoder() async {
+    try {
+      final account = await _qoderOAuth.saved(secrets: _providers.secrets);
+      if (mounted) setState(() => _qoderAccount = account);
+    } on Object {
+      // The system keychain may be locked: show as not connected.
+    }
+  }
+
+  Future<void> _connectQoder() async {
+    if (_qoderLogin != null) return;
+    final login = _qoderOAuth.begin();
+    unawaited(login.result.then<void>((_) {}, onError: (Object _) {}));
+    setState(() {
+      _qoderError = null;
+      _qoderLogin = login;
+    });
+    try {
+      login.start();
+      final opened = await openExternal(login.url.toString());
+      if (!opened) {
+        await login.cancel();
+        throw const QoderAuthException(
+          'Could not open Qoder browser sign-in.',
+        );
+      }
+      final account = await login.result;
+      await _qoderOAuth.save(account, secrets: _providers.secrets);
+      if (mounted) setState(() => _qoderAccount = account);
+    } on QoderAuthCancelled {
+      // User cancelled before authorization completed.
+    } on Object catch (error) {
+      if (mounted) setState(() => _qoderError = '$error');
+    } finally {
+      if (mounted) setState(() => _qoderLogin = null);
+    }
+  }
+
+  Future<void> _disconnectQoder() async {
+    await _qoderOAuth.signOut(secrets: _providers.secrets);
+    if (mounted) setState(() => _qoderAccount = null);
   }
 
   /// Opens the existing account OAuth screen for ChatGPT (no API key).
@@ -511,17 +561,47 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                     ),
             ),
             SettingsRow(
-              label: 'Qoder',
-              description: 'Native Qoder account login. Install Qoder CLI, '
-                  'sign in in the terminal, then choose Qoder as the '
-                  'coding agent in a new conversation.',
-              trailing: IdeButton(
-                label: 'Sign in with Qoder',
-                secondary: true,
-                onPressed: () => unawaited(
-                  _openCliAccountLogin(AccountLoginKind.qoder),
-                ),
-              ),
+              label: 'Qoder · Direct OAuth (experimental)',
+              description: _qoderAccount != null
+                  ? 'Signed in: ' +
+                      (_qoderAccount!.email.isNotEmpty
+                          ? _qoderAccount!.email
+                          : _qoderAccount!.userId) +
+                      '. VietCode stores your Qoder account in the OS '
+                      'keychain. Native model execution is not validated yet.'
+                  : _qoderLogin != null
+                  ? 'Complete the Qoder device authorization in your '
+                      'browser. VietCode polls Qoder directly; no CLI '
+                      'or 9Router installation is required.'
+                  : 'Sign in directly with your Qoder account in a '
+                      'browser (PKCE device OAuth, no CLI, no API key). '
+                      'This is an experimental login; model calls '
+                      'require separate integration.',
+              below: [
+                if (_qoderError case final message?)
+                  SelectableText(
+                    message,
+                    style: SettingsText.description.copyWith(
+                      color: themeColors['errorForeground'],
+                    ),
+                  ),
+              ],
+              trailing: _qoderLogin != null
+                  ? IdeButton(
+                      label: 'Cancel',
+                      secondary: true,
+                      onPressed: () => unawaited(_qoderLogin!.cancel()),
+                    )
+                  : _qoderAccount != null
+                  ? IdeButton(
+                      label: 'Sign out',
+                      secondary: true,
+                      onPressed: () => unawaited(_disconnectQoder()),
+                    )
+                  : IdeButton(
+                      label: 'Sign in with Qoder',
+                      onPressed: () => unawaited(_connectQoder()),
+                    ),
             ),
             SettingsRow(
               label: 'OpenCode',
