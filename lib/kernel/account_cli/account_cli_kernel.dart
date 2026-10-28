@@ -167,8 +167,10 @@ class AccountCliKernel
     }
   }
 
-  String? get _validCwd => context.cwd case final dir?
-      when Directory(dir).existsSync() => dir;
+  String? get _validCwd => switch (context.cwd) {
+    final dir? when Directory(dir).existsSync() => dir,
+    _ => null,
+  };
 
   @override
   void send(KernelTurn turn) {
