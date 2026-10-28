@@ -10,6 +10,10 @@ import 'image_api.dart';
 import 'image_generation_io.dart';
 import 'launch_environment.dart';
 import 'model_provider.dart';
+import 'copilot_direct.dart';
+import 'qoder_direct.dart';
+import 'qoder_direct_oauth.dart';
+import 'native_account_upstreams.dart';
 import 'model_providers.dart';
 import 'model_runtime.dart';
 import 'proxy/model_proxy.dart';
@@ -52,6 +56,35 @@ Future<List<RemoteModel>> listUpstreamModels(
 ) async {
   if (provider.protocol == ProviderProtocol.codex) {
     return _codex.listModels(provider);
+  }
+  if (isNativeCopilot(provider)) {
+    final auth = CopilotDirect();
+    final account = await auth.saved();
+    if (account == null || provider.accounts.isEmpty) {
+      throw const UpstreamException(
+        'GitHub Copilot is not signed in. Use Settings > Models.',
+      );
+    }
+    final ids = await auth.models(account);
+    return [for (final id in ids) RemoteModel(id)];
+  }
+  if (isNativeQoder(provider)) {
+    final account = await QoderDirectOAuth().saved();
+    if (account == null) {
+      throw const UpstreamException(
+        'Qoder account is signed out; sign in under Settings > Models.',
+      );
+    }
+    final catalog = await QoderDirect().models(account);
+    return [
+      for (final model in catalog)
+        RemoteModel(
+          model.id,
+          label: model.name,
+          contextWindow: model.contextWindow,
+          images: model.images,
+        ),
+    ];
   }
   final urls = UpstreamUrls.models(provider);
   if (urls.isEmpty) {

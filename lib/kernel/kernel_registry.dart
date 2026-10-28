@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'agent_kernel.dart';
+import 'account_cli/account_cli_kernel.dart';
+import 'account_cli/account_cli_protocol.dart';
+import 'copilot/copilot_direct_kernel.dart';
 import 'claude_code/claude_code_kernel.dart';
 import '../remote/remote_claude.dart';
 
@@ -26,7 +29,60 @@ abstract final class KernelRegistry {
     catalog: const ClaudeCatalog(),
   );
 
-  static List<KernelDescriptor> _all = [claudeCode];
+  /// These agents reuse the local CLI's own OAuth/subscription login.
+  /// They run as independent kernels, not pretend API-model upstreams.
+  static final KernelDescriptor qoder = KernelDescriptor(
+    id: 'qoder-cli',
+    label: 'Qoder',
+    icon: Icons.code_rounded,
+    description: 'Qoder Agent (signed in using qoder CLI)',
+    create: (context) => AccountCliKernel(qoder, context, AccountCliKind.qoder),
+  );
+
+  static final KernelDescriptor openCode = KernelDescriptor(
+    id: 'opencode-cli',
+    label: 'OpenCode',
+    icon: Icons.terminal_rounded,
+    description: 'OpenCode Agent (uses local provider OAuth sessions)',
+    create: (context) => AccountCliKernel(
+      openCode, context, AccountCliKind.opencode,
+    ),
+  );
+
+  /// Optional community OpenCode OAuth integration; not a Google-approved
+  /// Antigravity API. Requires explicit plugin setup in the user's CLI.
+  static final KernelDescriptor antigravity = KernelDescriptor(
+    id: 'antigravity-opencode',
+    label: 'Antigravity (community)',
+    icon: Icons.warning_amber_rounded,
+    description: 'Unofficial OpenCode Google OAuth plugin — account risk',
+    create: (context) => AccountCliKernel(
+      antigravity, context, AccountCliKind.antigravity,
+    ),
+  );
+
+  static final KernelDescriptor githubCopilotDirect = KernelDescriptor(
+    id: 'github-copilot-direct',
+    label: 'GitHub Copilot (Direct)',
+    icon: Icons.code_rounded,
+    description: 'Native GitHub OAuth and model calls; '
+        'chat-only, no external CLI required',
+    create: (context) =>
+        CopilotDirectKernel(githubCopilotDirect, context),
+  );
+
+  // CLI kernels remain available for people who explicitly opt into the
+  // existing agent integrations; the new Copilot kernel needs no CLI.
+  // The previous Qoder/OpenCode/Antigravity CLI kernels are deliberately
+  // excluded: this build promises native account integration only. Leaving
+  // them in the picker made a successful OAuth login appear to give native
+  // model access when requests actually launched external executables.
+  // Signed-in Copilot models now appear under Upstreams and run through
+  // VietCode's shared model proxy, just like Codex. Do not show an
+  // unrelated Copilot Chat kernel as a duplicate runtime choice.
+  static List<KernelDescriptor> _all = [
+    claudeCode,
+  ];
 
   static List<KernelDescriptor> get all => _all;
 

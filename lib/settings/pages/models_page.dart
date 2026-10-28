@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,6 +22,12 @@ import '../../models/featured_upstreams.dart';
 import '../../models/model_icons.dart';
 import '../../models/model_provider.dart';
 import '../../models/model_providers.dart';
+import '../../models/openrouter_oauth.dart';
+import '../../models/qoder_direct_oauth.dart';
+import '../../models/qoder_direct.dart';
+import '../../models/copilot_direct.dart';
+import '../../models/native_account_upstreams.dart';
+import '../../models/upstream.dart' show mergeModelList;
 import '../../models/model_runtime.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/codicons.dart';
@@ -28,6 +35,7 @@ import '../../theme/workbench_theme.dart' show themeColors;
 import '../../chat/widgets/hover_builder.dart';
 import '../../chat/widgets/pixel_loader.dart';
 import '../../workspace/workspace.dart';
+import '../../workspace/editor_launcher.dart' show openExternal;
 import 'featured_upstreams_strip.dart';
 import 'model_dialogs.dart';
 import 'settings_dropdown.dart';
@@ -124,6 +132,21 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
   /// The upstream whose page shows; the list when null.
   String? _open;
 
+  OpenRouterLogin? _openRouterLogin;
+  String? _oauthError;
+  final QoderDirectOAuth _qoderOAuth = QoderDirectOAuth();
+  QoderDeviceLogin? _qoderLogin;
+  QoderAccount? _qoderAccount;
+  String? _qoderError;
+  final CopilotDirect _copilotOAuth = CopilotDirect();
+  CopilotDeviceLogin? _copilotLogin;
+  bool _copilotConnecting = false;
+  CopilotAccount? _copilotAccount;
+  String? _copilotError;
+  int? _copilotModelCount;
+  bool _copilotTesting = false;
+  String? _copilotTestResult;
+
   ModelProviders get _providers => widget.providers;
 
   /// The sites listed (see [ModelsSettingsPage.featured]).
@@ -143,6 +166,8 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
     super.initState();
     _reveal();
     ModelsSettingsPage.reveal.addListener(_reveal);
+    unawaited(_loadQoder());
+    unawaited(_loadCopilot());
     if (_follows) FeaturedUpstream.known.addListener(_relist);
     unawaited(
       _featured.then((listed) {
@@ -167,6 +192,9 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
 
   @override
   void dispose() {
+    if (_openRouterLogin case final login?) unawaited(login.cancel());
+    if (_qoderLogin case final login?) unawaited(login.cancel());
+    if (_copilotLogin case final login?) unawaited(login.cancel());
     ModelsSettingsPage.reveal.removeListener(_reveal);
     if (_follows) FeaturedUpstream.known.removeListener(_relist);
     super.dispose();
@@ -185,6 +213,297 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
       context.l10n.modelsNewProviderName,
     );
     if (mounted) setState(() => _open = id);
+  }
+
+  Future<void> _loadQoder() async {
+    try {
+      final account = await _qoderOAuth.saved(secrets: _providers.secrets);
+      if (account != null) {
+        final existing = _providers.provider(nativeQoderProviderId);
+        if (existing == null) {
+          await NativeAccountUpstreams.upsertQoder(_providers, account);
+        } else if (existing.name == 'Qoder (account only)') {
+          // Previous VietCode builds saved this label. Migrate it in place
+          // without discarding the user's account, roles or model toggles.
+          await _providers.save(existing.copyWith(name: 'Qoder'));
+        }
+      }
+      if (mounted) setState(() => _qoderAccount = account);
+    } on Object {
+      // The system keychain may be locked: show as not connected.
+    }
+  }
+
+  Future<void> _connectQoder() async {
+    if (_qoderLogin != null) return;
+    final login = _qoderOAuth.begin();
+    unawaited(login.result.then<void>((_) {}, onError: (Object _) {}));
+    setState(() {
+      _qoderError = null;
+      _qoderLogin = login;
+    });
+    try {
+      login.start();
+      final opened = await openExternal(login.url.toString());
+      if (!opened) {
+        await login.cancel();
+        throw const QoderAuthException(
+          'Could not open Qoder browser sign-in.',
+        );
+      }
+      final account = await login.result;
+      await _qoderOAuth.save(account, secrets: _providers.secrets);
+      final upstream =
+          await NativeAccountUpstreams.upsertQoder(_providers, account);
+      if (mounted) setState(() {
+        _qoderAccount = account;
+        _open = upstream.id;
+      });
+    } on QoderAuthCancelled {
+      // User cancelled before authorization completed.
+    } on Object catch (error) {
+      if (mounted) setState(() => _qoderError = '$error');
+    } finally {
+      if (mounted) setState(() => _qoderLogin = null);
+    }
+  }
+
+  Future<void> _disconnectQoder() async {
+    await _qoderOAuth.signOut(secrets: _providers.secrets);
+    if (_providers.provider(nativeQoderProviderId) != null) {
+      await _providers.remove(nativeQoderProviderId);
+    }
+    if (mounted) setState(() {
+      _qoderAccount = null;
+      if (_open == nativeQoderProviderId) _open = null;
+    });
+  }
+
+  Future<void> _loadCopilot() async {
+    try {
+      final account = await _copilotOAuth.saved(
+        secrets: _providers.secrets,
+      );
+      if (account != null &&
+          _providers.provider(nativeCopilotProviderId) == null) {
+        // Migrate sessions from older VietCode builds even if account-model
+        // discovery cannot be completed offline.
+        await NativeAccountUpstreams.upsertCopilotAccountOnly(
+          _providers, account);
+        try {
+          final models = await _copilotOAuth.models(
+            account, secrets: _providers.secrets);
+          await NativeAccountUpstreams.upsertCopilot(
+            _providers, account, models);
+        } on Object catch (error) {
+          if (mounted) setState(() => _copilotError =
+              'Your GitHub account is linked, but Copilot models are '
+              'unavailable: $error');
+        }
+      }
+      if (mounted) setState(() => _copilotAccount = account);
+    } on Object {
+      // OS keychain may be locked.
+    }
+  }
+
+  Future<void> _connectCopilot() async {
+    if (_copilotConnecting || _copilotLogin != null) return;
+    setState(() {
+      _copilotConnecting = true;
+      _copilotError = null;
+      _copilotModelCount = null;
+    });
+    try {
+      final login = await _copilotOAuth.begin();
+      unawaited(login.result.then<void>((_) {}, onError: (Object _) {}));
+      if (!mounted) {
+        await login.cancel();
+        return;
+      }
+      setState(() => _copilotLogin = login);
+      login.start();
+      final opened = await openExternal(login.url.toString());
+      if (!opened) {
+        await login.cancel();
+        throw const CopilotDirectException(
+          'Could not open GitHub device authorization page.',
+        );
+      }
+      final authorized = await login.result;
+      // Commit the *account* first; a valid GitHub login must still be
+      // visible in Upstreams when Copilot model quota is missing.
+      await _copilotOAuth.save(
+        authorized, secrets: _providers.secrets);
+      final linked = await NativeAccountUpstreams.upsertCopilotAccountOnly(
+        _providers, authorized);
+      if (mounted) setState(() {
+        _copilotAccount = authorized;
+        _open = linked.id;
+      });
+      // Only the following steps validate actual Copilot model access.
+      final account = await _copilotOAuth.ensureToken(
+        authorized, secrets: _providers.secrets,
+      );
+      final models = await _copilotOAuth.models(
+        account, secrets: _providers.secrets,
+      );
+      if (models.isEmpty) {
+        throw const CopilotDirectException(
+          'GitHub login succeeded, but no Copilot models were available.',
+        );
+      }
+      final upstream = await NativeAccountUpstreams.upsertCopilot(
+        _providers, account, models);
+      if (mounted) setState(() {
+        _copilotAccount = account;
+        _copilotModelCount = models.length;
+        _open = upstream.id;
+      });
+    } on CopilotDirectCancelled {
+      // Cancelled by the user.
+    } on Object catch (error) {
+      if (mounted) setState(() => _copilotError = '$error');
+    } finally {
+      if (mounted) setState(() {
+        _copilotLogin = null;
+        _copilotConnecting = false;
+      });
+    }
+  }
+
+  Future<void> _testCopilot() async {
+    final account = _copilotAccount;
+    if (account == null || _copilotTesting) return;
+    setState(() {
+      _copilotError = null;
+      _copilotTestResult = null;
+      _copilotTesting = true;
+    });
+    try {
+      final models = await _copilotOAuth.models(
+        account, secrets: _providers.secrets,
+      );
+      if (models.isEmpty) {
+        throw const CopilotDirectException(
+          'No models currently available to this account.',
+        );
+      }
+      // Choose a low-cost testing model if the account has it.
+      final model = models.contains('gpt-5-mini')
+          ? 'gpt-5-mini'
+          : models.first;
+      final reply = await _copilotOAuth.complete(
+        account,
+        model: model,
+        messages: const [
+          {'role': 'user', 'content': 'Reply with OK.'},
+        ],
+        secrets: _providers.secrets,
+      );
+      if (mounted) setState(() => _copilotTestResult =
+          'Direct model response (' + model + '): ' + reply);
+    } on Object catch (error) {
+      if (mounted) setState(() => _copilotError = '$error');
+    } finally {
+      if (mounted) setState(() => _copilotTesting = false);
+    }
+  }
+
+  Future<void> _disconnectCopilot() async {
+    await _copilotOAuth.signOut(secrets: _providers.secrets);
+    if (_providers.provider(nativeCopilotProviderId) != null) {
+      await _providers.remove(nativeCopilotProviderId);
+    }
+    if (mounted) setState(() {
+      _copilotAccount = null;
+      _copilotModelCount = null;
+      if (_open == nativeCopilotProviderId) _open = null;
+    });
+  }
+
+  /// Opens the existing account OAuth screen for ChatGPT (no API key).
+  Future<void> _connectCodex() async {
+    final existing = _providers.providers
+        .where((provider) => provider.protocol == ProviderProtocol.codex)
+        .firstOrNull;
+    final id = existing?.id ?? _providers.newId('ChatGPT');
+    if (existing == null) {
+      await _providers.save(ModelProvider(
+        id: id, name: 'ChatGPT',
+        protocol: ProviderProtocol.codex,
+      ));
+    }
+    if (mounted) setState(() => _open = id);
+  }
+
+  /// Official OpenRouter account login. OpenRouter issues a user-scoped
+  /// credential after OAuth; it is saved only in the system keychain.
+  Future<void> _connectOpenRouter() async {
+    if (_openRouterLogin != null) return;
+    if (mounted) setState(() => _oauthError = null);
+    try {
+      final login = await OpenRouterOAuth.begin();
+      // Observe asynchronous cancellation, including while launching browser.
+      unawaited(login.result.then<void>(
+        (_) {},
+        onError: (Object _) {},
+      ));
+      if (!mounted) {
+        await login.cancel();
+        return;
+      }
+      setState(() => _openRouterLogin = login);
+      final opened = await openExternal(login.url.toString());
+      if (!opened) {
+        await login.cancel();
+        throw const OpenRouterAuthException(
+          'Could not open a browser for OpenRouter OAuth.',
+        );
+      }
+      final credential = await login.result;
+      final existing = _providers.providers
+          .where((provider) =>
+              provider.host == 'openrouter.ai' &&
+              provider.protocol == ProviderProtocol.openaiChat)
+          .firstOrNull;
+      final id = existing?.id ?? _providers.newId('OpenRouter');
+      // Store the credential before adding an upstream; on keychain failure
+      // an unusable new provider is not presented as connected.
+      await _providers.setKey(id, credential);
+      if (existing == null) {
+        await _providers.save(ModelProvider(
+          id: id,
+          name: 'OpenRouter',
+          protocol: ProviderProtocol.openaiChat,
+          baseUrl: 'https://openrouter.ai/api/v1',
+          disableNonessentialTraffic: true,
+        ));
+      }
+      // Populate real models immediately after OAuth. Importing the OAuth
+      // credential without fetching the catalog leaves Upstreams showing
+      // "0 models" even though the user already authorized the account.
+      try {
+        final current = _providers.provider(id)!;
+        final remote = await listUpstreamModels(current, credential);
+        await _providers.save(current.copyWith(
+          models: mergeModelList(current.models, remote),
+        ));
+      } on Object catch (error) {
+        if (mounted) {
+          setState(() => _oauthError =
+              'OpenRouter signed in, but model discovery failed: $error. '
+              'Use Fetch inside its Upstream to retry.');
+        }
+      }
+      if (mounted) setState(() => _open = id);
+    } on OpenRouterAuthCancelled {
+      // User explicitly cancelled.
+    } on Object catch (error) {
+      if (mounted) setState(() => _oauthError = '$error');
+    } finally {
+      if (mounted) setState(() => _openRouterLogin = null);
+    }
   }
 
   @override
@@ -372,6 +691,195 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
           ],
         ),
         SettingsGroup(
+          title: 'Sign in with an account (OAuth)',
+          description: 'Use a browser-based account login; no API key to '
+              'copy or paste.',
+          children: [
+            SettingsRow(
+              label: 'ChatGPT (Codex)',
+              description: 'Sign in with your ChatGPT account, then '
+                  'choose the models available to it.',
+              trailing: IdeButton(
+                label: 'Sign in',
+                onPressed: () => unawaited(_connectCodex()),
+              ),
+            ),
+            SettingsRow(
+              label: 'OpenRouter',
+              description: _openRouterLogin == null
+                  ? 'Authorize in your browser using official OAuth PKCE. '
+                      'OpenRouter usage is billed to your account.'
+                  : 'Waiting for authorization in your browser…',
+              below: [
+                if (_oauthError case final message?)
+                  SelectableText(
+                    message,
+                    style: SettingsText.description.copyWith(
+                      color: themeColors['errorForeground'],
+                    ),
+                  ),
+              ],
+              trailing: _openRouterLogin == null
+                  ? IdeButton(
+                      label: 'Sign in',
+                      onPressed: () => unawaited(_connectOpenRouter()),
+                    )
+                  : SettingsButtons(
+                      children: [
+                        IdeButton(
+                          label: 'Copy login link',
+                          icon: Codicons.copy,
+                          secondary: true,
+                          onPressed: () => unawaited(Clipboard.setData(
+                            ClipboardData(
+                              text: _openRouterLogin!.url.toString(),
+                            ),
+                          )),
+                        ),
+                        IdeButton(
+                          label: 'Cancel',
+                          secondary: true,
+                          onPressed: () =>
+                              unawaited(_openRouterLogin!.cancel()),
+                        ),
+                      ],
+                    ),
+            ),
+            SettingsRow(
+              label: 'Qoder · Direct OAuth (experimental)',
+              description: _qoderAccount != null &&
+                      _providers.provider(nativeQoderProviderId) != null
+                  ? 'Signed in: ' +
+                      (_qoderAccount!.email.isNotEmpty
+                          ? _qoderAccount!.email
+                          : _qoderAccount!.userId) +
+                      '. Qoder OAuth is stored in the OS keychain. '
+                      'Open Qoder under Upstreams to refresh actual models '
+                      'and test experimental signed inference.'
+                  : _qoderLogin != null
+                  ? 'Complete the Qoder device authorization in your '
+                      'browser. VietCode polls Qoder directly; no CLI '
+                      'or 9Router installation is required.'
+                  : 'Sign in directly with your Qoder account in a '
+                      'browser (PKCE device OAuth, no CLI, no API key). '
+                      'After sign-in, VietCode retrieves a COSY-signed '
+                      'model catalog directly from Qoder (experimental).',
+              below: [
+                if (_qoderError case final message?)
+                  SelectableText(
+                    message,
+                    style: SettingsText.description.copyWith(
+                      color: themeColors['errorForeground'],
+                    ),
+                  ),
+              ],
+              trailing: _qoderLogin != null
+                  ? IdeButton(
+                      label: 'Cancel',
+                      secondary: true,
+                      onPressed: () => unawaited(_qoderLogin!.cancel()),
+                    )
+                  : _qoderAccount != null &&
+                      _providers.provider(nativeQoderProviderId) != null
+                  ? IdeButton(
+                      label: 'Sign out',
+                      secondary: true,
+                      onPressed: () => unawaited(_disconnectQoder()),
+                    )
+                  : IdeButton(
+                      label: 'Sign in with Qoder',
+                      onPressed: () => unawaited(_connectQoder()),
+                    ),
+            ),
+            SettingsRow(
+              label: 'GitHub Copilot · Direct OAuth',
+              description: _copilotLogin != null
+                  ? 'GitHub device code: ' + _copilotLogin!.userCode +
+                      '. Enter this code in the GitHub browser page. '
+                      'No CLI, 9Router or copied API key is required.'
+                  : _copilotAccount != null &&
+                      _providers.provider(nativeCopilotProviderId) != null
+                  ? 'Connected GitHub account: ' +
+                      (_copilotAccount!.login.isNotEmpty
+                          ? _copilotAccount!.login : 'authorized') +
+                      '. ' + (_copilotModelCount != null
+                          ? _copilotModelCount.toString() + ' models verified. '
+                          : '') +
+                      'Open GitHub Copilot under Upstreams to select models.'
+                  : 'Sign in with GitHub device OAuth, then test your '
+                      'Copilot subscription and available models directly '
+                      'from VietCode. Experimental community integration.',
+              below: [
+                if (_copilotError case final message?)
+                  SelectableText(
+                    message,
+                    style: SettingsText.description.copyWith(
+                      color: themeColors['errorForeground'],
+                    ),
+                  ),
+                if (_copilotTestResult case final message?)
+                  SelectableText(
+                    message,
+                    style: SettingsText.description,
+                  ),
+              ],
+              trailing: _copilotLogin != null
+                  ? SettingsButtons(children: [
+                      IdeButton(
+                        label: 'Copy code',
+                        secondary: true,
+                        onPressed: () => unawaited(Clipboard.setData(
+                          ClipboardData(text: _copilotLogin!.userCode),
+                        )),
+                      ),
+                      IdeButton(
+                        label: 'Cancel',
+                        secondary: true,
+                        onPressed: () =>
+                            unawaited(_copilotLogin!.cancel()),
+                      ),
+                    ])
+                  : _copilotAccount != null &&
+                      _providers.provider(nativeCopilotProviderId) != null
+                  ? SettingsButtons(children: [
+                      IdeButton(
+                        label: _copilotTesting
+                            ? 'Testing…'
+                            : 'Test model (uses quota)',
+                        secondary: true,
+                        onPressed: _copilotTesting
+                            ? null
+                            : () => unawaited(_testCopilot()),
+                      ),
+                      IdeButton(
+                        label: 'Sign out',
+                        secondary: true,
+                        onPressed: () =>
+                            unawaited(_disconnectCopilot()),
+                      ),
+                    ])
+                  : IdeButton(
+                      label: 'Sign in with GitHub',
+                      onPressed: () => unawaited(_connectCopilot()),
+                    ),
+            ),
+            SettingsRow(
+              label: 'OpenCode Zen / Go',
+              description: 'OpenCode is an agent application, not an '
+                  'account-based model OAuth service. Zen and Go currently '
+                  'require API keys according to their documentation. '
+                  'VietCode does not pretend this is an OAuth login.',
+            ),
+            SettingsRow(
+              label: 'Google Antigravity (research)',
+              description: '9Router and community OAuth implementations '
+                  'use unofficial Google client credentials and private '
+                  'endpoints. Native sign-in and model calls have not '
+                  'been validated. No CLI or 9Router is invoked.',
+            ),
+          ],
+        ),
+        SettingsGroup(
           title: l10n.modelsProviders,
           children: [
             // Claude Code as set up on this machine: the CLI's alone, not
@@ -401,20 +909,29 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                   size: 16,
                 ),
                 name: provider.name,
-                badge: ModelsSettingsPage.protocolName(
-                  context,
-                  provider.protocol,
-                ),
+                badge: isNativeCopilot(provider)
+                    ? 'Copilot OAuth'
+                    : isNativeQoder(provider)
+                        ? 'Qoder OAuth'
+                        : ModelsSettingsPage.protocolName(
+                            context, provider.protocol,
+                          ),
                 detail: [
-                  if (provider.protocol.usesAccounts)
+                  if (provider.protocol.usesAccounts ||
+                      isNativeCopilot(provider) || isNativeQoder(provider))
                     l10n.modelsAccountCount(provider.accounts.length)
                   else if (provider.host.isEmpty)
                     l10n.modelsProviderNoUrl
                   else
                     provider.host,
                   l10n.modelsModelCount(provider.enabledModels.length),
+                  if (provider.models.length > provider.enabledModels.length)
+                    '${provider.models.length} discovered',
                 ].join(' · '),
-                status: !provider.enabled
+                status: isNativeQoder(provider) &&
+                        provider.models.isEmpty
+                    ? _Status.incomplete
+                    : !provider.enabled
                     ? _Status.off
                     : _providers.error(provider.id) != null
                     ? _Status.failed
@@ -423,6 +940,8 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                     : _Status.ready,
                 error: _providers.error(provider.id),
                 enabled: provider.enabled,
+                canToggle: !isNativeQoder(provider) ||
+                    provider.models.isNotEmpty,
                 switchLabel: l10n.modelsEnableProvider(provider.name),
                 onEnabled: (value) => unawaited(
                   _providers.save(provider.copyWith(enabled: value)),
@@ -456,6 +975,7 @@ class _ProviderRow extends StatelessWidget {
     required this.detail,
     required this.status,
     required this.enabled,
+    this.canToggle = true,
     required this.switchLabel,
     required this.onEnabled,
     this.error,
@@ -470,6 +990,7 @@ class _ProviderRow extends StatelessWidget {
   final _Status status;
   final String? error;
   final bool enabled;
+  final bool canToggle;
   final String switchLabel;
   final ValueChanged<bool> onEnabled;
   final VoidCallback? onOpen;
@@ -541,6 +1062,7 @@ class _ProviderRow extends StatelessWidget {
             value: enabled,
             semanticLabel: switchLabel,
             onChanged: onEnabled,
+            enabled: canToggle,
           ),
           if (onOpen != null) ...[
             const SizedBox(width: 8),
@@ -633,6 +1155,8 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
   CodexLogin? _login;
   String? _loginError;
   bool _refreshingQuota = false;
+  bool _nativeRefreshing = false;
+  String? _nativeError;
 
   ModelProviders get _providers => widget.providers;
   ModelProvider get _provider => widget.provider;
@@ -642,8 +1166,16 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
   void initState() {
     super.initState();
     _search.addListener(() => setState(() {}));
-    unawaited(_readKey());
-    if (_provider.protocol.usesAccounts && _provider.accounts.isNotEmpty) {
+    if (!isNativeCopilot(_provider) && !isNativeQoder(_provider)) {
+      unawaited(_readKey());
+    }
+    if (isNativeQoder(_provider)) {
+      // Existing OAuth accounts from earlier builds get a real COSY catalog
+      // lookup when the provider page is opened.
+      unawaited(_nativeRefreshModels());
+    }
+    if (_provider.protocol == ProviderProtocol.codex &&
+        _provider.accounts.isNotEmpty) {
       unawaited(_refreshQuota());
     }
   }
@@ -655,6 +1187,110 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
     _closed.complete();
     _search.dispose();
     super.dispose();
+  }
+
+  Future<void> _nativeRefreshModels() async {
+    if (_nativeRefreshing ||
+        !(isNativeCopilot(_providerNow) || isNativeQoder(_providerNow))) {
+      return;
+    }
+    setState(() {
+      _nativeRefreshing = true;
+      _nativeError = null;
+    });
+    try {
+      if (isNativeQoder(_providerNow)) {
+        final account = await QoderDirectOAuth().saved(
+          secrets: _providers.secrets);
+        if (account == null) {
+          throw const QoderInferenceException(
+            'Qoder account is signed out. Sign in again under Models.',
+          );
+        }
+        final models = await QoderDirect().models(account, force: true);
+        await NativeAccountUpstreams.upsertQoderModels(
+          _providers, account, models);
+      } else {
+        final oauth = CopilotDirect();
+        final account = await oauth.saved(secrets: _providers.secrets);
+        if (account == null) {
+          throw const CopilotDirectException(
+            'GitHub Copilot is signed out. Sign in again from Models.',
+          );
+        }
+        final models = await oauth.models(account, secrets: _providers.secrets);
+        await NativeAccountUpstreams.upsertCopilot(
+          _providers, account, models);
+      }
+      _providers.reportError(_provider.id, null);
+    } on Object catch (error) {
+      _providers.reportError(_provider.id, '$error');
+      if (mounted) setState(() => _nativeError = '$error');
+    } finally {
+      if (mounted) setState(() => _nativeRefreshing = false);
+    }
+  }
+
+  Future<void> _nativeSignOut() async {
+    final provider = _providerNow;
+    if (isNativeCopilot(provider)) {
+      await CopilotDirect().signOut(secrets: _providers.secrets);
+    } else if (isNativeQoder(provider)) {
+      await QoderDirectOAuth().signOut(secrets: _providers.secrets);
+    } else {
+      return;
+    }
+    widget.onBack();
+    await _providers.remove(provider.id);
+  }
+
+  Widget _nativeAccounts(BuildContext context) {
+    final provider = _providerNow;
+    final qoder = isNativeQoder(provider);
+    return SettingsGroup(
+      title: context.l10n.modelsAccounts,
+      description: qoder
+          ? 'Qoder OAuth · Native COSY signed model catalog and inference. '
+              'Experimental, unofficial and subject to account quota.'
+          : 'Signed-in GitHub account. Model credentials are '
+              'refreshed automatically in VietCode.',
+      children: [
+        for (final account in provider.accounts)
+          SettingsRow(
+            label: account.displayName,
+            description: qoder
+                ? 'Qoder account · Native OAuth (experimental)'
+                : 'GitHub Copilot · OAuth connected',
+          ),
+        if (_nativeError case final error?)
+          SettingsRow(
+            label: 'Connection error',
+            description: error,
+          ),
+        SettingsRow(
+          label: 'Models available to this account',
+          description: qoder && provider.models.isEmpty
+              ? 'No verified Qoder models yet. Click Refresh models to '
+                  'request your actual catalog via signed COSY.'
+              : '${provider.models.length} models discovered. Use the '
+                  'checkboxes below to enable models in the global picker.',
+          trailing: SettingsButtons(children: [
+            IdeButton(
+              label: _nativeRefreshing ? 'Refreshing…' : 'Refresh models',
+              secondary: true,
+              onPressed: _nativeRefreshing
+                  ? null
+                  : () => unawaited(_nativeRefreshModels()),
+            ),
+            IdeButton(
+              label: 'Sign out',
+              secondary: true,
+              onPressed: () => unawaited(_nativeSignOut()),
+            ),
+          ]),
+        ),
+      ],
+    );
   }
 
   Future<void> _addAccount() async {
@@ -795,12 +1431,69 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
         final model = queue.removeAt(0);
         _ModelTest test;
         try {
-          final answer = await widget.testModel(
-            _providerNow,
-            model,
-            cancel: _closed.future,
-          );
-          test = _ModelTest(answer: answer);
+          if (isNativeQoder(_providerNow)) {
+            final account = await QoderDirectOAuth().saved(
+              secrets: _providers.secrets);
+            if (account == null) {
+              throw const QoderInferenceException(
+                'Qoder account is signed out; sign in again.',
+              );
+            }
+            final watch = Stopwatch()..start();
+            final raw = await QoderDirect().complete(account, model.id, {
+              'model': model.id,
+              'messages': const [
+                {'role': 'user', 'content': 'Reply with OK.'},
+              ],
+              'max_tokens': 50,
+            });
+            watch.stop();
+            final answer = jsonDecode(raw);
+            final choices = answer is Map ? answer['choices'] : null;
+            final reply = choices is List && choices.isNotEmpty
+                ? ((choices.first as Map)['message'] as Map)['content']
+                    .toString()
+                : '';
+            test = _ModelTest(answer: ClaudeTimedAnswer(
+              reply,
+              firstText: watch.elapsed,
+              lastText: watch.elapsed,
+            ));
+          } else if (isNativeCopilot(_providerNow)) {
+            // Test the selected Copilot model DIRECTLY; do not invoke the
+            // Claude Code CLI or a separate coding agent just to verify a
+            // model in this OAuth Upstream. This sends one small quota-using
+            // chat request to Copilot itself.
+            final service = CopilotDirect();
+            final account = await service.saved(secrets: _providers.secrets);
+            if (account == null) {
+              throw const CopilotDirectException(
+                'GitHub Copilot has been signed out.',
+              );
+            }
+            final watch = Stopwatch()..start();
+            final reply = await service.complete(
+              account,
+              model: model.id,
+              messages: const [
+                {'role': 'user', 'content': 'Reply with OK.'},
+              ],
+              secrets: _providers.secrets,
+            );
+            watch.stop();
+            test = _ModelTest(answer: ClaudeTimedAnswer(
+              reply,
+              firstText: watch.elapsed,
+              lastText: watch.elapsed,
+            ));
+          } else {
+            final answer = await widget.testModel(
+              _providerNow,
+              model,
+              cancel: _closed.future,
+            );
+            test = _ModelTest(answer: answer);
+          }
         } on ClaudeHaikuCancelled {
           return;
         } on Object catch (error) {
@@ -911,31 +1604,38 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
         const SizedBox(height: 8),
         Text(provider.name, style: SettingsText.title),
         const SizedBox(height: 16),
-        _connection(context),
-        if (provider.protocol.usesAccounts) ...[
+        if (!isNativeCopilot(provider) && !isNativeQoder(provider))
+          _connection(context),
+        if (isNativeCopilot(provider) || isNativeQoder(provider)) ...[
+          _nativeAccounts(context),
+        ] else if (provider.protocol == ProviderProtocol.codex) ...[
           const SizedBox(height: 16),
           ListenableBuilder(
             listenable: _codex,
             builder: (context, _) => _accounts(context),
           ),
         ],
-        const SizedBox(height: 16),
-        _models(context),
-        const SizedBox(height: 16),
-        _Folding(
+        if (!isNativeQoder(provider) || provider.models.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          _models(context),
+          const SizedBox(height: 16),
+          _Folding(
           title: l10n.modelsRoles,
           description: l10n.modelsRolesDescription,
           open: _rolesOpen,
           onToggle: () => setState(() => _rolesOpen = !_rolesOpen),
           children: _roles(context),
-        ),
-        const SizedBox(height: 16),
-        _Folding(
+          ),
+        ],
+        if (!isNativeCopilot(provider) && !isNativeQoder(provider)) ...[
+          const SizedBox(height: 16),
+          _Folding(
           title: l10n.modelsAdvanced,
           open: _advancedOpen,
           onToggle: () => setState(() => _advancedOpen = !_advancedOpen),
           children: _advanced(context),
-        ),
+          ),
+        ],
       ],
     );
   }
@@ -1292,12 +1992,14 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
                         ? null
                         : () => unawaited(_fetch()),
                   ),
-                  IdeButton(
-                    label: l10n.modelsAddModel,
-                    icon: Codicons.add,
-                    secondary: true,
-                    onPressed: () => unawaited(_editModel()),
-                  ),
+                  if (!isNativeCopilot(provider) &&
+                      !isNativeQoder(provider))
+                    IdeButton(
+                      label: l10n.modelsAddModel,
+                      icon: Codicons.add,
+                      secondary: true,
+                      onPressed: () => unawaited(_editModel()),
+                    ),
                 ],
               ),
             ],
@@ -1311,6 +2013,8 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
           for (final model in shown)
             _ModelRow(
               model: model,
+              catalogManaged: isNativeCopilot(provider) ||
+                  isNativeQoder(provider),
               endpoint: switch (provider.protocolOf(model)) {
                 final protocol when protocol != provider.protocol => protocol,
                 _ => null,
@@ -1625,6 +2329,7 @@ Map<String, String> parseHeaders(String text) => {
 class _ModelRow extends StatelessWidget {
   const _ModelRow({
     required this.model,
+    this.catalogManaged = false,
     this.endpoint,
     required this.test,
     required this.onEnabled,
@@ -1635,6 +2340,7 @@ class _ModelRow extends StatelessWidget {
   });
 
   final ProviderModel model;
+  final bool catalogManaged;
 
   /// The endpoint it is spoken to at, when not its upstream's.
   final ProviderProtocol? endpoint;
@@ -1757,12 +2463,14 @@ class _ModelRow extends StatelessWidget {
                     anchor: box.localToGlobal(Offset.zero) & box.size,
                     alignRight: true,
                     entries: [
-                      IdeMenuAction(l10n.modelsEdit, onSelected: onEdit),
-                      IdeMenuAction(
-                        l10n.modelsDuplicate,
-                        onSelected: onDuplicate,
-                      ),
-                      IdeMenuAction(l10n.modelsRemove, onSelected: onRemove),
+                      if (!catalogManaged) ...[
+                        IdeMenuAction(l10n.modelsEdit, onSelected: onEdit),
+                        IdeMenuAction(
+                          l10n.modelsDuplicate,
+                          onSelected: onDuplicate,
+                        ),
+                        IdeMenuAction(l10n.modelsRemove, onSelected: onRemove),
+                      ],
                       IdeMenuAction(
                         l10n.modelsTestModel,
                         enabled:

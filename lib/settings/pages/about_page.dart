@@ -18,7 +18,7 @@ import 'settings_widgets.dart';
 class AboutSettingsPage extends StatelessWidget {
   const AboutSettingsPage({super.key});
 
-  static final website = Uri.parse('https://baocode.dev');
+  static final website = Uri.parse('https://github.com/VietHann/baocode_v');
   static final issues = StarPrompt.repository.replace(
     path: '${StarPrompt.repository.path}/issues',
   );
@@ -28,10 +28,7 @@ class AboutSettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final zh = Localizations.localeOf(context).languageCode == 'zh';
-    final changelog = website.replace(
-      path: zh ? '/zh/changelog' : '/changelog',
-    );
+    final changelog = website.replace(path: '/VietHann/baocode_v/releases');
     final repository = StarPrompt.repository;
     return SettingsPage(
       title: l10n.settingsSectionAbout,
@@ -56,7 +53,7 @@ class AboutSettingsPage extends StatelessWidget {
                     textBaseline: TextBaseline.alphabetic,
                     children: [
                       Text(
-                        'BaoCode',
+                        'VietCode',
                         style: TextStyle(
                           color: AppColors.textPrimary,
                           fontSize: 17,

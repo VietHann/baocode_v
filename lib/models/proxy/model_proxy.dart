@@ -10,6 +10,11 @@ import '../codex/codex_api.dart';
 import '../codex/codex_service.dart';
 import '../launch_environment.dart';
 import '../model_provider.dart';
+import '../native_account_upstreams.dart';
+import '../copilot_direct.dart';
+import '../qoder_direct.dart';
+import '../qoder_direct_oauth.dart';
+import '../secret_store.dart';
 import '../upstream.dart';
 import 'prompt_cache_key.dart';
 import 'translate/openai_chat_request.dart';
@@ -48,13 +53,27 @@ class ModelProxy {
     this._onError,
     this._findProxy,
     this._codex,
+    CopilotDirect? copilot,
+    SecretStore? copilotSecrets,
+    QoderDirect? qoder,
+    QoderDirectOAuth? qoderOAuth,
+    @visibleForTesting HttpClient? upstreamClient,
     @visibleForTesting String? token,
-  }) : token = token ?? _newToken();
+  }) : _copilot = copilot ?? CopilotDirect(),
+       _copilotSecrets = copilotSecrets ?? SecretStore.instance,
+       _qoder = qoder ?? QoderDirect(),
+       _qoderOAuth = qoderOAuth ?? QoderDirectOAuth(),
+       _client = upstreamClient,
+       token = token ?? _newToken();
 
   final ModelProvider? Function(String id) _provider;
 
   /// The ChatGPT (Codex) providers' accounts.
   final CodexAccounts? _codex;
+  final CopilotDirect _copilot;
+  final SecretStore _copilotSecrets;
+  final QoderDirect _qoder;
+  final QoderDirectOAuth _qoderOAuth;
   final Future<String?> Function(String id) _key;
   final void Function(String id, String? error)? _onError;
 
@@ -242,7 +261,9 @@ class ModelProxy {
       } else {
         outgoing.remove('reasoning_effort');
       }
-      if (stream) outgoing['stream_options'] = {'include_usage': true};
+      if (stream && !isNativeCopilot(provider)) {
+        outgoing['stream_options'] = {'include_usage': true};
+      }
     } else {
       outgoing = convertClaudeRequestToResponses(
         modelId,
@@ -266,6 +287,35 @@ class ModelProxy {
       }
     }
 
+    // Qoder uses COSY-signed transport: encrypted account identity,
+    // model_config, body obfuscation and nested SSE. No 9Router runtime.
+    if (isNativeQoder(provider)) {
+      final account = await _qoderOAuth.saved(secrets: _copilotSecrets);
+      if (account == null || provider.accounts.isEmpty) {
+        return _fail(response, 401,
+            'Qoder account is signed out; sign in again under Models.');
+      }
+      if (!stream) {
+        final chat = await _qoder.complete(account, modelId, outgoing);
+        return _json(
+          response, 200, convertOpenAIResponseToClaudeNonStream(body, chat),
+        );
+      }
+      final frames = _qoder.stream(account, modelId, outgoing);
+      _startEvents(response);
+      final translator = OpenAIChatResponseTranslator(body);
+      var done = false;
+      await for (final line in frames) {
+        if (line.trim() == 'data: [DONE]') done = true;
+        for (final converted in translator.convert(line)) {
+          response.write(converted);
+        }
+        await response.flush();
+      }
+      if (!done) translator.convert('data: [DONE]').forEach(response.write);
+      return response.close();
+    }
+
     final HttpClientResponse? upstream;
     final Stream<String> lines;
     if (provider.protocol == ProviderProtocol.codex) {
@@ -282,14 +332,39 @@ class ModelProxy {
       if (opened == null) return;
       lines = opened;
     } else {
-      final url = UpstreamUrls.conversation(provider);
+      // An account-authenticated provider must use a fresh account token,
+      // never a static upstream key. The proxy is internal to VietCode; no
+      // Qoder/OpenCode CLI or 9Router gateway is contacted.
+      final copilot = isNativeCopilot(provider);
+      final url = copilot
+          ? _copilot.completionEndpoint
+          : UpstreamUrls.conversation(provider);
       if (url == null) {
         return _fail(response, 400, '${provider.name} has no valid base URL');
       }
+      // Check account and refresh the short-lived model credential BEFORE
+      // opening an HTTP request. Otherwise an early 401 leaves an open
+      // HttpClientRequest and consumes connections.
+      String? copilotToken;
+      if (copilot) {
+        final auth = _copilot;
+        final account = await auth.saved(secrets: _copilotSecrets);
+        if (account == null || provider.accounts.isEmpty) {
+          return _fail(response, 401,
+              'GitHub Copilot is signed out. Sign in under Settings > Models.');
+        }
+        final refreshed = await auth.ensureToken(
+          account, secrets: _copilotSecrets);
+        copilotToken = refreshed.copilotToken;
+      }
       final client = await _upstream();
       final upstreamRequest = await client.postUrl(url);
-      final key = await _key(provider.id);
-      upstreamHeaders(provider, key).forEach(upstreamRequest.headers.set);
+      if (copilot) {
+        CopilotDirect.applyRequestHeaders(upstreamRequest, copilotToken!);
+      } else {
+        final key = await _key(provider.id);
+        upstreamHeaders(provider, key).forEach(upstreamRequest.headers.set);
+      }
       // The user's own headers after them: a name that may not be set is
       // left out, so none of the above is overwritten.
       customUpstreamHeaders(

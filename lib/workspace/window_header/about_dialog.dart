@@ -14,11 +14,11 @@ Future<void> showAboutBaoCode(BuildContext context) => showDialog<void>(
   context: context,
   // Black, not the theme's: as upstream's dialogs dim the window.
   barrierColor: const Color(0x88000000),
-  builder: (context) => const _AboutBaoCodeDialog(),
+  builder: (context) => const _AboutVietCodeDialog(),
 );
 
-class _AboutBaoCodeDialog extends StatelessWidget {
-  const _AboutBaoCodeDialog();
+class _AboutVietCodeDialog extends StatelessWidget {
+  const _AboutVietCodeDialog();
 
   @override
   Widget build(BuildContext context) {
@@ -59,7 +59,7 @@ class _AboutBaoCodeDialog extends StatelessWidget {
                 ),
                 SizedBox(width: 10),
                 Text(
-                  'BaoCode',
+                  'VietCode',
                   style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 15,

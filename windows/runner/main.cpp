@@ -133,7 +133,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   Win32Window::Size size(kDefaultWidth, kDefaultHeight);
   Win32Window::Point placed = origin;
   PlaceOnMonitor(origin, &size, &placed);
-  if (!window.Create(L"BaoCode", placed, size)) {
+  if (!window.Create(L"VietCode", placed, size)) {
     return EXIT_FAILURE;
   }
   window.SetMinimumSize(Win32Window::Size(kMinClientWidth, kMinClientHeight));

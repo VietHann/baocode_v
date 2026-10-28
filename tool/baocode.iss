@@ -48,15 +48,15 @@
 ; between versions, or an upgrade installs beside the old one instead of over
 ; it.
 AppId={{6fdd732b-95c6-4c37-af6f-ff574358deb5}
-AppName=BaoCode
+AppName=VietCode
 AppVersion={#VersionNumber}
-AppPublisher=BaoCode
-AppVerName=BaoCode {#VersionNumber}
-DefaultDirName={autopf}\BaoCode
-DefaultGroupName=BaoCode
-UninstallDisplayName=BaoCode
-UninstallDisplayIcon={app}\baocode.exe
-OutputBaseFilename=BaoCode-{#VersionNumber}-setup{#ArchSuffix}{#Edition}
+AppPublisher=VietCode
+AppVerName=VietCode {#VersionNumber}
+DefaultDirName={autopf}\VietCode
+DefaultGroupName=VietCode
+UninstallDisplayName=VietCode
+UninstallDisplayIcon={app}\VietCode.exe
+OutputBaseFilename=VietCode-{#VersionNumber}-setup{#ArchSuffix}{#Edition}
 OutputDir={#OutDir}
 ; What Explorer shows for the installer itself. Windows wants four numbers,
 ; where pubspec's version has three.
@@ -64,6 +64,7 @@ VersionInfoVersion={#VersionNumber}.0
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=..\windows\runner\resources\app_icon.ico
 ; The app is 64-bit only: x64 (which Windows on Arm runs too, emulated),
 ; or arm64.
 #if Arch == "arm64"
@@ -99,10 +100,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
   GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "addtopath"; Description: "Add BaoCode to the PATH"; \
+Name: "addtopath"; Description: "Add VietCode to the PATH"; \
   GroupDescription: "Other:"; Flags: unchecked
 Name: "contextmenu"; \
-  Description: "Add ""Open with BaoCode"" and ""Open with Fast Ide"" to Explorer's context menu"; \
+  Description: "Add ""Open with VietCode"" and ""Open with Fast Ide"" to Explorer's context menu"; \
   GroupDescription: "Other:"
 
 [Files]
@@ -127,9 +128,9 @@ Type: files; Name: "{app}\baocode-browser-host.exe.*.old"
 Type: files; Name: "{app}\baocode-browser-host.exe.*.old"
 
 [Icons]
-Name: "{group}\BaoCode"; Filename: "{app}\baocode.exe"
-Name: "{group}\{cm:UninstallProgram,BaoCode}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\BaoCode"; Filename: "{app}\baocode.exe"; Tasks: desktopicon
+Name: "{group}\VietCode"; Filename: "{app}\VietCode.exe"
+Name: "{group}\{cm:UninstallProgram,VietCode}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\VietCode"; Filename: "{app}\VietCode.exe"; Tasks: desktopicon
 
 [Registry]
 ; Only when asked for. Which hive follows the install mode: a per-machine
@@ -152,60 +153,60 @@ Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; \
 ; reinstall, they go. Settings → General writes the same keys under HKCU
 ; (lib/platform/context_menu_io.dart), for the user alone.
 Root: HKA; Subkey: "Software\Classes\*\shell\BaoCode"; ValueType: string; \
-  ValueName: ""; ValueData: "{code:MenuLabel|BaoCode}"; Tasks: contextmenu; \
+  ValueName: ""; ValueData: "{code:MenuLabel|VietCode}"; Tasks: contextmenu; \
   Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\*\shell\BaoCode"; ValueType: string; \
-  ValueName: "Icon"; ValueData: """{app}\baocode.exe"""; Tasks: contextmenu
+  ValueName: "Icon"; ValueData: """{app}\VietCode.exe"""; Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\*\shell\BaoCode\command"; \
   ValueType: string; ValueName: ""; \
-  ValueData: """{app}\baocode.exe"" --baocode-agent ""%1"""; Tasks: contextmenu
+  ValueData: """{app}\VietCode.exe"" --baocode-agent ""%1"""; Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\Directory\shell\BaoCode"; \
-  ValueType: string; ValueName: ""; ValueData: "{code:MenuLabel|BaoCode}"; \
+  ValueType: string; ValueName: ""; ValueData: "{code:MenuLabel|VietCode}"; \
   Tasks: contextmenu; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\Directory\shell\BaoCode"; \
-  ValueType: string; ValueName: "Icon"; ValueData: """{app}\baocode.exe"""; \
+  ValueType: string; ValueName: "Icon"; ValueData: """{app}\VietCode.exe"""; \
   Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\Directory\shell\BaoCode\command"; \
   ValueType: string; ValueName: ""; \
-  ValueData: """{app}\baocode.exe"" --baocode-agent ""%V"""; Tasks: contextmenu
+  ValueData: """{app}\VietCode.exe"" --baocode-agent ""%V"""; Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\BaoCode"; \
-  ValueType: string; ValueName: ""; ValueData: "{code:MenuLabel|BaoCode}"; \
+  ValueType: string; ValueName: ""; ValueData: "{code:MenuLabel|VietCode}"; \
   Tasks: contextmenu; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\BaoCode"; \
-  ValueType: string; ValueName: "Icon"; ValueData: """{app}\baocode.exe"""; \
+  ValueType: string; ValueName: "Icon"; ValueData: """{app}\VietCode.exe"""; \
   Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\BaoCode\command"; \
   ValueType: string; ValueName: ""; \
-  ValueData: """{app}\baocode.exe"" --baocode-agent ""%V"""; Tasks: contextmenu
+  ValueData: """{app}\VietCode.exe"" --baocode-agent ""%V"""; Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\*\shell\BaoCodeFastIde"; \
   ValueType: string; ValueName: ""; ValueData: "{code:MenuLabel|Fast Ide}"; \
   Tasks: contextmenu; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\*\shell\BaoCodeFastIde"; \
-  ValueType: string; ValueName: "Icon"; ValueData: """{app}\baocode.exe"""; \
+  ValueType: string; ValueName: "Icon"; ValueData: """{app}\VietCode.exe"""; \
   Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\*\shell\BaoCodeFastIde\command"; \
   ValueType: string; ValueName: ""; \
-  ValueData: """{app}\baocode.exe"" --baocode-cli ""%1"" -n ""%1"""; \
+  ValueData: """{app}\VietCode.exe"" --baocode-cli ""%1"" -n ""%1"""; \
   Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\Directory\shell\BaoCodeFastIde"; \
   ValueType: string; ValueName: ""; ValueData: "{code:MenuLabel|Fast Ide}"; \
   Tasks: contextmenu; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\Directory\shell\BaoCodeFastIde"; \
-  ValueType: string; ValueName: "Icon"; ValueData: """{app}\baocode.exe"""; \
+  ValueType: string; ValueName: "Icon"; ValueData: """{app}\VietCode.exe"""; \
   Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\Directory\shell\BaoCodeFastIde\command"; \
   ValueType: string; ValueName: ""; \
-  ValueData: """{app}\baocode.exe"" --baocode-cli ""%V"" -n ""%V"""; \
+  ValueData: """{app}\VietCode.exe"" --baocode-cli ""%V"" -n ""%V"""; \
   Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\BaoCodeFastIde"; \
   ValueType: string; ValueName: ""; ValueData: "{code:MenuLabel|Fast Ide}"; \
   Tasks: contextmenu; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\BaoCodeFastIde"; \
-  ValueType: string; ValueName: "Icon"; ValueData: """{app}\baocode.exe"""; \
+  ValueType: string; ValueName: "Icon"; ValueData: """{app}\VietCode.exe"""; \
   Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\BaoCodeFastIde\command"; \
   ValueType: string; ValueName: ""; \
-  ValueData: """{app}\baocode.exe"" --baocode-cli ""%V"" -n ""%V"""; \
+  ValueData: """{app}\VietCode.exe"" --baocode-cli ""%V"" -n ""%V"""; \
   Tasks: contextmenu
 ; The baocode: URL scheme, always: a site's one-click import of an upstream
 ; (baocode.dev/import opens baocode://provider/import?…; see
@@ -213,14 +214,14 @@ Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\BaoCodeFastIde\c
 ; opens baocode://activate?…). The link comes after --baocode-link, which the
 ; runner hands Flutter as a request (windows/runner/open_requests.cpp).
 Root: HKA; Subkey: "Software\Classes\baocode"; ValueType: string; \
-  ValueName: ""; ValueData: "URL:BaoCode"; Flags: uninsdeletekey
+  ValueName: ""; ValueData: "URL:VietCode"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\baocode"; ValueType: string; \
   ValueName: "URL Protocol"; ValueData: ""
 Root: HKA; Subkey: "Software\Classes\baocode\DefaultIcon"; ValueType: string; \
-  ValueName: ""; ValueData: """{app}\baocode.exe"",0"
+  ValueName: ""; ValueData: """{app}\VietCode.exe"",0"
 Root: HKA; Subkey: "Software\Classes\baocode\shell\open\command"; \
   ValueType: string; ValueName: ""; \
-  ValueData: """{app}\baocode.exe"" --baocode-link ""%1"""
+  ValueData: """{app}\VietCode.exe"" --baocode-link ""%1"""
 ; The browsers' native messaging host for BaoCode's extension, always
 ; (windows/BrowserBridge): a browser finds dev.baocode.browser.json, beside
 ; baocode.exe, by its key, and the manifest names the host beside it.
@@ -265,12 +266,12 @@ Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\BaoCodeFastIde";
   ValueType: none; Tasks: not contextmenu; Flags: deletekey
 
 [Run]
-Filename: "{app}\baocode.exe"; Description: "{cm:LaunchProgram,BaoCode}"; \
+Filename: "{app}\VietCode.exe"; Description: "{cm:LaunchProgram,VietCode}"; \
   Flags: nowait postinstall skipifsilent
 ; An update the app ran (lib/update/installer_io.dart) is silent, which
 ; skips the entry above: /RELAUNCH opens the app again once it is in place,
 ; as the user who ran it rather than the administrator Setup elevated to.
-Filename: "{app}\baocode.exe"; Flags: nowait runasoriginaluser; \
+Filename: "{app}\VietCode.exe"; Flags: nowait runasoriginaluser; \
   Check: RelaunchRequested
 
 [Code]
