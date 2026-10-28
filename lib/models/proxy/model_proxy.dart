@@ -12,6 +12,7 @@ import '../launch_environment.dart';
 import '../model_provider.dart';
 import '../native_account_upstreams.dart';
 import '../copilot_direct.dart';
+import '../secret_store.dart';
 import '../upstream.dart';
 import 'prompt_cache_key.dart';
 import 'translate/openai_chat_request.dart';
@@ -50,13 +51,21 @@ class ModelProxy {
     this._onError,
     this._findProxy,
     this._codex,
+    CopilotDirect? copilot,
+    SecretStore? copilotSecrets,
+    @visibleForTesting HttpClient? upstreamClient,
     @visibleForTesting String? token,
-  }) : token = token ?? _newToken();
+  }) : _copilot = copilot ?? CopilotDirect(),
+       _copilotSecrets = copilotSecrets ?? SecretStore.instance,
+       _client = upstreamClient,
+       token = token ?? _newToken();
 
   final ModelProvider? Function(String id) _provider;
 
   /// The ChatGPT (Codex) providers' accounts.
   final CodexAccounts? _codex;
+  final CopilotDirect _copilot;
+  final SecretStore _copilotSecrets;
   final Future<String?> Function(String id) _key;
   final void Function(String id, String? error)? _onError;
 
@@ -291,7 +300,7 @@ class ModelProxy {
       // Qoder/OpenCode CLI or 9Router gateway is contacted.
       final copilot = isNativeCopilot(provider);
       final url = copilot
-          ? CopilotDirect().completionEndpoint
+          ? _copilot.completionEndpoint
           : UpstreamUrls.conversation(provider);
       if (url == null) {
         return _fail(response, 400, '${provider.name} has no valid base URL');
@@ -301,13 +310,14 @@ class ModelProxy {
       // HttpClientRequest and consumes connections.
       String? copilotToken;
       if (copilot) {
-        final auth = CopilotDirect();
-        final account = await auth.saved();
+        final auth = _copilot;
+        final account = await auth.saved(secrets: _copilotSecrets);
         if (account == null || provider.accounts.isEmpty) {
           return _fail(response, 401,
               'GitHub Copilot is signed out. Sign in under Settings > Models.');
         }
-        final refreshed = await auth.ensureToken(account);
+        final refreshed = await auth.ensureToken(
+          account, secrets: _copilotSecrets);
         copilotToken = refreshed.copilotToken;
       }
       final client = await _upstream();
