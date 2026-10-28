@@ -703,7 +703,8 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
             ),
             SettingsRow(
               label: 'Qoder · Direct OAuth (experimental)',
-              description: _qoderAccount != null
+              description: _qoderAccount != null &&
+                      _providers.provider(nativeQoderProviderId) != null
                   ? 'Signed in: ' +
                       (_qoderAccount!.email.isNotEmpty
                           ? _qoderAccount!.email
@@ -733,7 +734,8 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                       secondary: true,
                       onPressed: () => unawaited(_qoderLogin!.cancel()),
                     )
-                  : _qoderAccount != null
+                  : _qoderAccount != null &&
+                      _providers.provider(nativeQoderProviderId) != null
                   ? IdeButton(
                       label: 'Sign out',
                       secondary: true,
@@ -750,7 +752,8 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                   ? 'GitHub device code: ' + _copilotLogin!.userCode +
                       '. Enter this code in the GitHub browser page. '
                       'No CLI, 9Router or copied API key is required.'
-                  : _copilotAccount != null
+                  : _copilotAccount != null &&
+                      _providers.provider(nativeCopilotProviderId) != null
                   ? 'Connected GitHub account: ' +
                       (_copilotAccount!.login.isNotEmpty
                           ? _copilotAccount!.login : 'authorized') +
@@ -791,7 +794,8 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                             unawaited(_copilotLogin!.cancel()),
                       ),
                     ])
-                  : _copilotAccount != null
+                  : _copilotAccount != null &&
+                      _providers.provider(nativeCopilotProviderId) != null
                   ? SettingsButtons(children: [
                       IdeButton(
                         label: _copilotTesting
@@ -1876,6 +1880,7 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
           for (final model in shown)
             _ModelRow(
               model: model,
+              catalogManaged: isNativeCopilot(provider),
               endpoint: switch (provider.protocolOf(model)) {
                 final protocol when protocol != provider.protocol => protocol,
                 _ => null,
@@ -2190,6 +2195,7 @@ Map<String, String> parseHeaders(String text) => {
 class _ModelRow extends StatelessWidget {
   const _ModelRow({
     required this.model,
+    this.catalogManaged = false,
     this.endpoint,
     required this.test,
     required this.onEnabled,
@@ -2200,6 +2206,7 @@ class _ModelRow extends StatelessWidget {
   });
 
   final ProviderModel model;
+  final bool catalogManaged;
 
   /// The endpoint it is spoken to at, when not its upstream's.
   final ProviderProtocol? endpoint;
@@ -2322,12 +2329,14 @@ class _ModelRow extends StatelessWidget {
                     anchor: box.localToGlobal(Offset.zero) & box.size,
                     alignRight: true,
                     entries: [
-                      IdeMenuAction(l10n.modelsEdit, onSelected: onEdit),
-                      IdeMenuAction(
-                        l10n.modelsDuplicate,
-                        onSelected: onDuplicate,
-                      ),
-                      IdeMenuAction(l10n.modelsRemove, onSelected: onRemove),
+                      if (!catalogManaged) ...[
+                        IdeMenuAction(l10n.modelsEdit, onSelected: onEdit),
+                        IdeMenuAction(
+                          l10n.modelsDuplicate,
+                          onSelected: onDuplicate,
+                        ),
+                        IdeMenuAction(l10n.modelsRemove, onSelected: onRemove),
+                      ],
                       IdeMenuAction(
                         l10n.modelsTestModel,
                         enabled:
