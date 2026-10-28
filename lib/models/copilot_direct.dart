@@ -288,6 +288,12 @@ class CopilotDirect {
     }
   }
 
+  /// The same authenticated headers used by the native model catalog/chat
+  /// client. Also used when the shared VietCode model proxy translates
+  /// Claude Code tool requests to Copilot Chat Completions.
+  static void applyRequestHeaders(HttpClientRequest request, String token) =>
+      _copilotHeaders(request, token);
+
   static void _copilotHeaders(HttpClientRequest request, String token) {
     request.headers.set(
         HttpHeaders.authorizationHeader, 'Bearer ' + token);
