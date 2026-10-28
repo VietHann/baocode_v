@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:baocode/models/copilot_direct.dart';
 import 'package:baocode/models/qoder_direct_oauth.dart';
+import 'package:baocode/models/qoder_direct.dart';
 import 'package:baocode/models/native_account_upstreams.dart';
 import 'package:baocode/models/model_provider.dart';
 import 'package:baocode/models/model_providers.dart';
@@ -68,4 +69,47 @@ void main() {
     expect(store.enabled.where((p) => p.id == nativeQoderProviderId), isEmpty);
     expect(store.provider(nativeQoderProviderId), isNotNull);
   });
+
+  test('Qoder catalog refresh preserves toggles and does not advertise images',
+      () async {
+    final store = ModelProviders.memory();
+    const account = QoderAccount(
+      token: 'dt-test', userId: 'user',
+      machineId: 'machine', email: 'user@example.com',
+    );
+    await NativeAccountUpstreams.upsertQoder(store, account);
+    final initial = await NativeAccountUpstreams.upsertQoderModels(
+      store, account, [
+        const QoderRemoteModel(
+          id: 'live-model', name: 'Live model',
+          config: {'key': 'live-model', 'is_vl': true},
+          images: true,
+        ),
+      ],
+    );
+    expect(initial.enabled, isTrue);
+    expect(initial.enabledModels.single.id, 'live-model');
+    expect(initial.models.single.images, isFalse);
+    await store.save(initial.copyWith(
+      enabled: false,
+      models: [initial.models.single.copyWith(enabled: false)],
+    ));
+    final refreshed = await NativeAccountUpstreams.upsertQoderModels(
+      store, account, [
+        const QoderRemoteModel(
+          id: 'live-model', name: 'Live model',
+          config: {'key': 'live-model'},
+        ),
+        const QoderRemoteModel(
+          id: 'new-model', name: 'New model',
+          config: {'key': 'new-model'},
+        ),
+      ],
+    );
+    expect(refreshed.enabled, isFalse);
+    expect(refreshed.model('live-model')!.enabled, isFalse);
+    expect(refreshed.model('new-model')!.enabled, isTrue);
+    expect(refreshed.accounts.single.email, account.email);
+  });
+
 }
