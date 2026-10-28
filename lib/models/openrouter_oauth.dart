@@ -4,7 +4,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'codex/codex_oauth.dart' show CodexPkce, codexState;
+import 'oauth_pkce.dart';
 
 class OpenRouterAuthException implements Exception {
   const OpenRouterAuthException(this.message);
@@ -38,8 +38,8 @@ abstract final class OpenRouterOAuth {
     Uri? tokenEndpoint,
   }) async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final pkce = CodexPkce.generate();
-    final state = codexState();
+    final pkce = OAuthPkce.generate();
+    final state = oauthRandomState();
     final port = server.port;
     final callback = Uri.parse('http://127.0.0.1:$port/oauth/callback');
     final login = OpenRouterLogin._(
