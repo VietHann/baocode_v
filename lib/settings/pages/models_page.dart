@@ -278,11 +278,20 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
       );
       if (account != null &&
           _providers.provider(nativeCopilotProviderId) == null) {
-        // Migrate pre-existing OAuth sessions into the shared model picker.
-        final models = await _copilotOAuth.models(
-          account, secrets: _providers.secrets);
-        await NativeAccountUpstreams.upsertCopilot(
-          _providers, account, models);
+        // Migrate sessions from older VietCode builds even if account-model
+        // discovery cannot be completed offline.
+        await NativeAccountUpstreams.upsertCopilotAccountOnly(
+          _providers, account);
+        try {
+          final models = await _copilotOAuth.models(
+            account, secrets: _providers.secrets);
+          await NativeAccountUpstreams.upsertCopilot(
+            _providers, account, models);
+        } on Object catch (error) {
+          if (mounted) setState(() => _copilotError =
+              'Your GitHub account is linked, but Copilot models are '
+              'unavailable: $error');
+        }
       }
       if (mounted) setState(() => _copilotAccount = account);
     } on Object {
@@ -314,7 +323,17 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
         );
       }
       final authorized = await login.result;
-      // Verify an actual Copilot subscription, not just a GitHub login.
+      // Commit the *account* first; a valid GitHub login must still be
+      // visible in Upstreams when Copilot model quota is missing.
+      await _copilotOAuth.save(
+        authorized, secrets: _providers.secrets);
+      final linked = await NativeAccountUpstreams.upsertCopilotAccountOnly(
+        _providers, authorized);
+      if (mounted) setState(() {
+        _copilotAccount = authorized;
+        _open = linked.id;
+      });
+      // Only the following steps validate actual Copilot model access.
       final account = await _copilotOAuth.ensureToken(
         authorized, secrets: _providers.secrets,
       );
