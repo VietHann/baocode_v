@@ -73,8 +73,12 @@ abstract final class KernelRegistry {
 
   // CLI kernels remain available for people who explicitly opt into the
   // existing agent integrations; the new Copilot kernel needs no CLI.
+  // The previous Qoder/OpenCode/Antigravity CLI kernels are deliberately
+  // excluded: this build promises native account integration only. Leaving
+  // them in the picker made a successful OAuth login appear to give native
+  // model access when requests actually launched external executables.
   static List<KernelDescriptor> _all = [
-    claudeCode, githubCopilotDirect, qoder, openCode, antigravity,
+    claudeCode, githubCopilotDirect,
   ];
 
   static List<KernelDescriptor> get all => _all;
