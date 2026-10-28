@@ -1392,12 +1392,41 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
         final model = queue.removeAt(0);
         _ModelTest test;
         try {
-          final answer = await widget.testModel(
-            _providerNow,
-            model,
-            cancel: _closed.future,
-          );
-          test = _ModelTest(answer: answer);
+          if (isNativeCopilot(_providerNow)) {
+            // Test the selected Copilot model DIRECTLY; do not invoke the
+            // Claude Code CLI or a separate coding agent just to verify a
+            // model in this OAuth Upstream. This sends one small quota-using
+            // chat request to Copilot itself.
+            final service = CopilotDirect();
+            final account = await service.saved(secrets: _providers.secrets);
+            if (account == null) {
+              throw const CopilotDirectException(
+                'GitHub Copilot has been signed out.',
+              );
+            }
+            final watch = Stopwatch()..start();
+            final reply = await service.complete(
+              account,
+              model: model.id,
+              messages: const [
+                {'role': 'user', 'content': 'Reply with OK.'},
+              ],
+              secrets: _providers.secrets,
+            );
+            watch.stop();
+            test = _ModelTest(answer: ClaudeTimedAnswer(
+              reply,
+              firstText: watch.elapsed,
+              lastText: watch.elapsed,
+            ));
+          } else {
+            final answer = await widget.testModel(
+              _providerNow,
+              model,
+              cancel: _closed.future,
+            );
+            test = _ModelTest(answer: answer);
+          }
         } on ClaudeHaikuCancelled {
           return;
         } on Object catch (error) {
