@@ -2,6 +2,7 @@ import 'model_provider.dart';
 import 'model_providers.dart';
 import 'copilot_direct.dart';
 import 'qoder_direct_oauth.dart';
+import 'qoder_direct.dart';
 
 /// Distinct built-in OAuth upstreams, not CLI gateways or manually entered
 /// API keys. A provider is only selectable after its real model catalog has
@@ -95,16 +96,64 @@ abstract final class NativeAccountUpstreams {
     return provider;
   }
 
-  /// Qoder's device OAuth token has been obtained, but its COSY inference
-  /// adapter has NOT been written. Keep it visible under Upstreams as an
-  /// account-only connection; no fake model selection, endpoint or model.
+  /// A signed Qoder account with a live catalog (not static guesses).
+  /// Refreshing preserves the user's model enablement selection.
+  static Future<ModelProvider> upsertQoderModels(
+    ModelProviders store,
+    QoderAccount account,
+    List<QoderRemoteModel> models,
+  ) async {
+    if (models.isEmpty) {
+      throw const QoderInferenceException(
+        'Qoder did not return any enabled models for this account.',
+      );
+    }
+    final existing = store.provider(nativeQoderProviderId);
+    final previous = <String, ProviderModel>{
+      if (existing != null)
+        for (final m in existing.models) m.id: m,
+    };
+    final provider = ModelProvider(
+      id: nativeQoderProviderId,
+      name: 'Qoder',
+      protocol: ProviderProtocol.openaiChat,
+      baseUrl: 'https://api3.qoder.sh',
+      enabled: true,
+      disableNonessentialTraffic: true,
+      promptCacheKey: false,
+      models: [
+        for (final remote in models)
+          ProviderModel(
+            id: remote.id,
+            label: remote.name,
+            contextWindow: remote.contextWindow,
+            images: remote.images,
+            enabled: previous[remote.id]?.enabled ?? true,
+          ),
+      ],
+      accounts: [
+        ProviderAccount(
+          id: account.userId,
+          email: account.email.isNotEmpty ? account.email : null,
+        ),
+      ],
+      roles: existing?.roles ?? const ProviderRoles(),
+      icon: existing?.icon,
+    );
+    await store.save(provider);
+    return provider;
+  }
+
+  /// Qoder's device OAuth succeeded. Show the account even when catalog
+  /// fetching is offline, denied by the provider, or out of quota.
+  /// Only upsertQoderModels may make real models selectable.
   static Future<ModelProvider> upsertQoder(
     ModelProviders store, QoderAccount account,
   ) async {
     final existing = store.provider(nativeQoderProviderId);
     final provider = ModelProvider(
       id: nativeQoderProviderId,
-      name: existing?.name ?? 'Qoder (account only)',
+      name: 'Qoder',
       protocol: ProviderProtocol.openaiChat,
       enabled: false,
       baseUrl: '',
