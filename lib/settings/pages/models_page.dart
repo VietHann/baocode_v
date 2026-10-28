@@ -922,7 +922,8 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                   if (provider.models.length > provider.enabledModels.length)
                     '${provider.models.length} discovered',
                 ].join(' · '),
-                status: isNativeQoder(provider)
+                status: isNativeQoder(provider) &&
+                        provider.models.isEmpty
                     ? _Status.incomplete
                     : !provider.enabled
                     ? _Status.off
