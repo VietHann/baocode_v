@@ -23,9 +23,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
       - name: Run provider tests
-        run: dart test test/models/openrouter_oauth_test.dart
+        run: dart test test/models/openrouter_oauth_test.dart && flutter test test/kernel/account_cli_protocol_test.dart
       - name: Analyze modified Dart files
-        run: dart analyze lib/models/oauth_pkce.dart lib/models/openrouter_oauth.dart lib/settings/pages/models_page.dart test/models/openrouter_oauth_test.dart
+        run: dart analyze lib/models/oauth_pkce.dart lib/models/openrouter_oauth.dart lib/kernel/account_cli/account_cli_protocol.dart lib/kernel/account_cli/account_cli_kernel.dart lib/kernel/account_cli/account_cli_login_io.dart lib/kernel/kernel_registry.dart lib/settings/pages/models_page.dart test/models/openrouter_oauth_test.dart test/kernel/account_cli_protocol_test.dart
       - name: Build Windows x64
         run: flutter build windows --release
       - name: Install Inno Setup 6
