@@ -9,6 +9,12 @@ on:
 permissions:
   contents: read
 
+# Repeated OAuth/UI fixes should not waste Windows runners building
+# installers for superseded commits. Only the latest branch head matters.
+concurrency:
+  group: vietcode-windows-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows:
     runs-on: windows-latest
