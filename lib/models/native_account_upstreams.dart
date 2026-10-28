@@ -118,7 +118,11 @@ abstract final class NativeAccountUpstreams {
       name: 'Qoder',
       protocol: ProviderProtocol.openaiChat,
       baseUrl: 'https://api3.qoder.sh',
-      enabled: true,
+      // Initial account-only connections are disabled until a catalog
+      // loads. Keep a user's explicit on/off choice on later refreshes.
+      enabled: existing == null || existing.models.isEmpty
+          ? true
+          : existing.enabled,
       disableNonessentialTraffic: true,
       promptCacheKey: false,
       models: [
@@ -127,7 +131,10 @@ abstract final class NativeAccountUpstreams {
             id: remote.id,
             label: remote.name,
             contextWindow: remote.contextWindow,
-            images: remote.images,
+            // Qoder VL models upload images via a separate signed
+            // multipart endpoint. Do not claim attachment support before
+            // that transport is implemented; the text-only path works.
+            images: false,
             enabled: previous[remote.id]?.enabled ?? true,
           ),
       ],
