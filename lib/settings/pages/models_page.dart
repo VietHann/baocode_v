@@ -24,6 +24,7 @@ import '../../models/model_provider.dart';
 import '../../models/model_providers.dart';
 import '../../models/openrouter_oauth.dart';
 import '../../models/qoder_direct_oauth.dart';
+import '../../models/copilot_direct.dart';
 import '../../models/model_runtime.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/codicons.dart';
@@ -134,6 +135,11 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
   QoderDeviceLogin? _qoderLogin;
   QoderAccount? _qoderAccount;
   String? _qoderError;
+  final CopilotDirect _copilotOAuth = CopilotDirect();
+  CopilotDeviceLogin? _copilotLogin;
+  CopilotAccount? _copilotAccount;
+  String? _copilotError;
+  int? _copilotModelCount;
 
   ModelProviders get _providers => widget.providers;
 
@@ -155,6 +161,7 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
     _reveal();
     ModelsSettingsPage.reveal.addListener(_reveal);
     unawaited(_loadQoder());
+    unawaited(_loadCopilot());
     if (_follows) FeaturedUpstream.known.addListener(_relist);
     unawaited(
       _featured.then((listed) {
@@ -181,6 +188,7 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
   void dispose() {
     if (_openRouterLogin case final login?) unawaited(login.cancel());
     if (_qoderLogin case final login?) unawaited(login.cancel());
+    if (_copilotLogin case final login?) unawaited(login.cancel());
     ModelsSettingsPage.reveal.removeListener(_reveal);
     if (_follows) FeaturedUpstream.known.removeListener(_relist);
     super.dispose();
@@ -251,6 +259,73 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
   Future<void> _disconnectQoder() async {
     await _qoderOAuth.signOut(secrets: _providers.secrets);
     if (mounted) setState(() => _qoderAccount = null);
+  }
+
+  Future<void> _loadCopilot() async {
+    try {
+      final account = await _copilotOAuth.saved(
+        secrets: _providers.secrets,
+      );
+      if (mounted) setState(() => _copilotAccount = account);
+    } on Object {
+      // OS keychain may be locked.
+    }
+  }
+
+  Future<void> _connectCopilot() async {
+    if (_copilotLogin != null) return;
+    setState(() {
+      _copilotError = null;
+      _copilotModelCount = null;
+    });
+    try {
+      final login = await _copilotOAuth.begin();
+      unawaited(login.result.then<void>((_) {}, onError: (Object _) {}));
+      if (!mounted) {
+        await login.cancel();
+        return;
+      }
+      setState(() => _copilotLogin = login);
+      login.start();
+      final opened = await openExternal(login.url.toString());
+      if (!opened) {
+        await login.cancel();
+        throw const CopilotDirectException(
+          'Could not open GitHub device authorization page.',
+        );
+      }
+      final authorized = await login.result;
+      // Verify an actual Copilot subscription, not just a GitHub login.
+      final account = await _copilotOAuth.ensureToken(
+        authorized, secrets: _providers.secrets,
+      );
+      final models = await _copilotOAuth.models(
+        account, secrets: _providers.secrets,
+      );
+      if (models.isEmpty) {
+        throw const CopilotDirectException(
+          'GitHub login succeeded, but no Copilot models were available.',
+        );
+      }
+      if (mounted) setState(() {
+        _copilotAccount = account;
+        _copilotModelCount = models.length;
+      });
+    } on CopilotDirectCancelled {
+      // Cancelled by the user.
+    } on Object catch (error) {
+      if (mounted) setState(() => _copilotError = '$error');
+    } finally {
+      if (mounted) setState(() => _copilotLogin = null);
+    }
+  }
+
+  Future<void> _disconnectCopilot() async {
+    await _copilotOAuth.signOut(secrets: _providers.secrets);
+    if (mounted) setState(() {
+      _copilotAccount = null;
+      _copilotModelCount = null;
+    });
   }
 
   /// Opens the existing account OAuth screen for ChatGPT (no API key).
@@ -601,6 +676,60 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                   : IdeButton(
                       label: 'Sign in with Qoder',
                       onPressed: () => unawaited(_connectQoder()),
+                    ),
+            ),
+            SettingsRow(
+              label: 'GitHub Copilot · Direct OAuth',
+              description: _copilotLogin != null
+                  ? 'GitHub device code: ' + _copilotLogin!.userCode +
+                      '. Enter this code in the GitHub browser page. '
+                      'No CLI, 9Router or copied API key is required.'
+                  : _copilotAccount != null
+                  ? 'Connected GitHub account: ' +
+                      (_copilotAccount!.login.isNotEmpty
+                          ? _copilotAccount!.login : 'authorized') +
+                      '. ' + (_copilotModelCount != null
+                          ? _copilotModelCount.toString() + ' models verified. '
+                          : '') +
+                      'Choose GitHub Copilot (Direct) in the agent selector.'
+                  : 'Sign in with GitHub device OAuth, then test your '
+                      'Copilot subscription and available models directly '
+                      'from VietCode. Experimental community integration.',
+              below: [
+                if (_copilotError case final message?)
+                  SelectableText(
+                    message,
+                    style: SettingsText.description.copyWith(
+                      color: themeColors['errorForeground'],
+                    ),
+                  ),
+              ],
+              trailing: _copilotLogin != null
+                  ? SettingsButtons(children: [
+                      IdeButton(
+                        label: 'Copy code',
+                        secondary: true,
+                        onPressed: () => unawaited(Clipboard.setData(
+                          ClipboardData(text: _copilotLogin!.userCode),
+                        )),
+                      ),
+                      IdeButton(
+                        label: 'Cancel',
+                        secondary: true,
+                        onPressed: () =>
+                            unawaited(_copilotLogin!.cancel()),
+                      ),
+                    ])
+                  : _copilotAccount != null
+                  ? IdeButton(
+                      label: 'Sign out',
+                      secondary: true,
+                      onPressed: () =>
+                          unawaited(_disconnectCopilot()),
+                    )
+                  : IdeButton(
+                      label: 'Sign in with GitHub',
+                      onPressed: () => unawaited(_connectCopilot()),
                     ),
             ),
             SettingsRow(
