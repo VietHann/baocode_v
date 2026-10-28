@@ -932,7 +932,8 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                     : _Status.ready,
                 error: _providers.error(provider.id),
                 enabled: provider.enabled,
-                canToggle: !isNativeQoder(provider),
+                canToggle: !isNativeQoder(provider) ||
+                    provider.models.isNotEmpty,
                 switchLabel: l10n.modelsEnableProvider(provider.name),
                 onEnabled: (value) => unawaited(
                   _providers.save(provider.copyWith(enabled: value)),
@@ -1422,7 +1423,35 @@ class _ProviderSettingsPageState extends State<ProviderSettingsPage> {
         final model = queue.removeAt(0);
         _ModelTest test;
         try {
-          if (isNativeCopilot(_providerNow)) {
+          if (isNativeQoder(_providerNow)) {
+            final account = await QoderDirectOAuth().saved(
+              secrets: _providers.secrets);
+            if (account == null) {
+              throw const QoderInferenceException(
+                'Qoder account is signed out; sign in again.',
+              );
+            }
+            final watch = Stopwatch()..start();
+            final raw = await QoderDirect().complete(account, model.id, {
+              'model': model.id,
+              'messages': const [
+                {'role': 'user', 'content': 'Reply with OK.'},
+              ],
+              'max_tokens': 50,
+            });
+            watch.stop();
+            final answer = jsonDecode(raw);
+            final choices = answer is Map ? answer['choices'] : null;
+            final reply = choices is List && choices.isNotEmpty
+                ? ((choices.first as Map)['message'] as Map)['content']
+                    .toString()
+                : '';
+            test = _ModelTest(answer: ClaudeTimedAnswer(
+              reply,
+              firstText: watch.elapsed,
+              lastText: watch.elapsed,
+            ));
+          } else if (isNativeCopilot(_providerNow)) {
             // Test the selected Copilot model DIRECTLY; do not invoke the
             // Claude Code CLI or a separate coding agent just to verify a
             // model in this OAuth Upstream. This sends one small quota-using
