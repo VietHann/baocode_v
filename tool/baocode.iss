@@ -266,7 +266,7 @@ Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\BaoCodeFastIde";
   ValueType: none; Tasks: not contextmenu; Flags: deletekey
 
 [Run]
-Filename: "{app}\VietCode.exe"; Description: "{cm:LaunchProgram,BaoCode}"; \
+Filename: "{app}\VietCode.exe"; Description: "{cm:LaunchProgram,VietCode}"; \
   Flags: nowait postinstall skipifsilent
 ; An update the app ran (lib/update/installer_io.dart) is silent, which
 ; skips the entry above: /RELAUNCH opens the app again once it is in place,
