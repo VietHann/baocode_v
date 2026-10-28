@@ -1,4 +1,4 @@
-name: Windows x64 (account OAuth fork)
+name: VietCode Windows x64 (direct account integrations)
 
 on:
   push:
@@ -26,6 +26,11 @@ jobs:
         run: dart test test/models/openrouter_oauth_test.dart && flutter test test/kernel/account_cli_protocol_test.dart
       - name: Analyze modified Dart files
         run: dart analyze lib/models/oauth_pkce.dart lib/models/openrouter_oauth.dart lib/kernel/account_cli/account_cli_protocol.dart lib/kernel/account_cli/account_cli_kernel.dart lib/kernel/account_cli/account_cli_login_io.dart lib/kernel/kernel_registry.dart lib/settings/pages/models_page.dart test/models/openrouter_oauth_test.dart test/kernel/account_cli_protocol_test.dart
+      - name: Generate VietCode application icons
+        shell: pwsh
+        run: |
+          python -m pip install Pillow
+          python tool/vietcode_brand.py
       - name: Build Windows x64
         run: flutter build windows --release
       - name: Install Inno Setup 6
@@ -41,14 +46,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "Windows installer build failed"
           }
-          $installer = Get-ChildItem "build/installers" -Filter "BaoCode-*-setup.exe" | Select-Object -First 1
+          $installer = Get-ChildItem "build/installers" -Filter "VietCode-*-setup.exe" | Select-Object -First 1
           if (-not $installer) {
-            throw "Missing BaoCode-<version>-setup.exe"
+            throw "Missing VietCode-<version>-setup.exe"
           }
           Write-Host "Installer: $($installer.FullName), $($installer.Length) bytes"
       - uses: actions/upload-artifact@v4
         with:
-          name: BaoCode-OAuth-Windows-Setup-EXE
-          path: build/installers/BaoCode-*-setup.exe
+          name: VietCode-Direct-OAuth-Windows-Setup
+          path: build/installers/VietCode-*-setup.exe
           if-no-files-found: error
           retention-days: 30
