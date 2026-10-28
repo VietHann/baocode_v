@@ -12,6 +12,8 @@ import '../launch_environment.dart';
 import '../model_provider.dart';
 import '../native_account_upstreams.dart';
 import '../copilot_direct.dart';
+import '../qoder_direct.dart';
+import '../qoder_direct_oauth.dart';
 import '../secret_store.dart';
 import '../upstream.dart';
 import 'prompt_cache_key.dart';
@@ -53,10 +55,14 @@ class ModelProxy {
     this._codex,
     CopilotDirect? copilot,
     SecretStore? copilotSecrets,
+    QoderDirect? qoder,
+    QoderDirectOAuth? qoderOAuth,
     @visibleForTesting HttpClient? upstreamClient,
     @visibleForTesting String? token,
   }) : _copilot = copilot ?? CopilotDirect(),
        _copilotSecrets = copilotSecrets ?? SecretStore.instance,
+       _qoder = qoder ?? QoderDirect(),
+       _qoderOAuth = qoderOAuth ?? QoderDirectOAuth(),
        _client = upstreamClient,
        token = token ?? _newToken();
 
@@ -66,6 +72,8 @@ class ModelProxy {
   final CodexAccounts? _codex;
   final CopilotDirect _copilot;
   final SecretStore _copilotSecrets;
+  final QoderDirect _qoder;
+  final QoderDirectOAuth _qoderOAuth;
   final Future<String?> Function(String id) _key;
   final void Function(String id, String? error)? _onError;
 
@@ -277,6 +285,35 @@ class ModelProxy {
       if (promptCacheKey(body, header: sessionHeader) case final key?) {
         outgoing['prompt_cache_key'] = key;
       }
+    }
+
+    // Qoder uses COSY-signed transport: encrypted account identity,
+    // model_config, body obfuscation and nested SSE. No 9Router runtime.
+    if (isNativeQoder(provider)) {
+      final account = await _qoderOAuth.saved(secrets: _copilotSecrets);
+      if (account == null || provider.accounts.isEmpty) {
+        return _fail(response, 401,
+            'Qoder account is signed out; sign in again under Models.');
+      }
+      if (!stream) {
+        final chat = await _qoder.complete(account, modelId, outgoing);
+        return _json(
+          response, 200, convertOpenAIResponseToClaudeNonStream(body, chat),
+        );
+      }
+      final frames = _qoder.stream(account, modelId, outgoing);
+      _startEvents(response);
+      final translator = OpenAIChatResponseTranslator(body);
+      var done = false;
+      await for (final line in frames) {
+        if (line.trim() == 'data: [DONE]') done = true;
+        for (final converted in translator.convert(line)) {
+          response.write(converted);
+        }
+        await response.flush();
+      }
+      if (!done) translator.convert('data: [DONE]').forEach(response.write);
+      return response.close();
     }
 
     final HttpClientResponse? upstream;
