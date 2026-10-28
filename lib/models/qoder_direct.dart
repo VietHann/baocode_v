@@ -217,6 +217,11 @@ class QoderDirect {
             ? decoded['body'] : decoded;
         if (inner is String) {
           if (inner == '[DONE]') {
+            // Qoder can send DONE as the envelope body rather than as the
+            // outer SSE data. Flush deferred finish/usage in either case.
+            for (final chunk in normalizer.finish()) {
+              yield 'data: ${jsonEncode(chunk)}';
+            }
             yield 'data: [DONE]';
             return;
           }
