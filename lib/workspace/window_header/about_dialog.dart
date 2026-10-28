@@ -17,8 +17,8 @@ Future<void> showAboutBaoCode(BuildContext context) => showDialog<void>(
   builder: (context) => const _AboutVietCodeDialog(),
 );
 
-class _AboutBaoCodeDialog extends StatelessWidget {
-  const _AboutBaoCodeDialog();
+class _AboutVietCodeDialog extends StatelessWidget {
+  const _AboutVietCodeDialog();
 
   @override
   Widget build(BuildContext context) {
