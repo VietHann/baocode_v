@@ -916,6 +916,8 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                   else
                     provider.host,
                   l10n.modelsModelCount(provider.enabledModels.length),
+                  if (provider.models.length > provider.enabledModels.length)
+                    '${provider.models.length} discovered',
                 ].join(' · '),
                 status: isNativeQoder(provider)
                     ? _Status.incomplete
@@ -928,6 +930,7 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                     : _Status.ready,
                 error: _providers.error(provider.id),
                 enabled: provider.enabled,
+                canToggle: !isNativeQoder(provider),
                 switchLabel: l10n.modelsEnableProvider(provider.name),
                 onEnabled: (value) => unawaited(
                   _providers.save(provider.copyWith(enabled: value)),
@@ -961,6 +964,7 @@ class _ProviderRow extends StatelessWidget {
     required this.detail,
     required this.status,
     required this.enabled,
+    this.canToggle = true,
     required this.switchLabel,
     required this.onEnabled,
     this.error,
@@ -975,6 +979,7 @@ class _ProviderRow extends StatelessWidget {
   final _Status status;
   final String? error;
   final bool enabled;
+  final bool canToggle;
   final String switchLabel;
   final ValueChanged<bool> onEnabled;
   final VoidCallback? onOpen;
@@ -1046,6 +1051,7 @@ class _ProviderRow extends StatelessWidget {
             value: enabled,
             semanticLabel: switchLabel,
             onChanged: onEnabled,
+            enabled: canToggle,
           ),
           if (onOpen != null) ...[
             const SizedBox(width: 8),
