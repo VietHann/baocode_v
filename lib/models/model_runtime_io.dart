@@ -11,6 +11,8 @@ import 'image_generation_io.dart';
 import 'launch_environment.dart';
 import 'model_provider.dart';
 import 'copilot_direct.dart';
+import 'qoder_direct.dart';
+import 'qoder_direct_oauth.dart';
 import 'native_account_upstreams.dart';
 import 'model_providers.dart';
 import 'model_runtime.dart';
@@ -67,10 +69,22 @@ Future<List<RemoteModel>> listUpstreamModels(
     return [for (final id in ids) RemoteModel(id)];
   }
   if (isNativeQoder(provider)) {
-    throw const UpstreamException(
-      'Qoder account is linked, but native COSY model inference '
-      'has not been implemented. Models cannot be fetched yet.',
-    );
+    final account = await QoderDirectOAuth().saved();
+    if (account == null) {
+      throw const UpstreamException(
+        'Qoder account is signed out; sign in under Settings > Models.',
+      );
+    }
+    final catalog = await QoderDirect().models(account);
+    return [
+      for (final model in catalog)
+        RemoteModel(
+          model.id,
+          label: model.name,
+          contextWindow: model.contextWindow,
+          images: model.images,
+        ),
+    ];
   }
   final urls = UpstreamUrls.models(provider);
   if (urls.isEmpty) {
