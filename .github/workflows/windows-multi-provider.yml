@@ -28,17 +28,27 @@ jobs:
         run: dart analyze lib/models/oauth_pkce.dart lib/models/openrouter_oauth.dart lib/settings/pages/models_page.dart test/models/openrouter_oauth_test.dart
       - name: Build Windows x64
         run: flutter build windows --release
-      - name: Package executable and required runtime
+      - name: Install Inno Setup 6
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+      - name: Build Windows installer EXE
         shell: pwsh
         run: |
-          $bundle = "build/windows/x64/runner/Release"
-          if (-not (Test-Path "$bundle/baocode.exe")) {
-            throw "Windows build did not produce baocode.exe"
+          # Reuse the already-built Flutter release and package it with
+          # the repository's official installer builder. Stock engine avoids
+          # requiring BaoCode upstream's privately patched engine binary.
+          dart run tool/build_windows.dart --skip-build --stock-engine --remote-release latest
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows installer build failed"
           }
-          Compress-Archive -Path "$bundle/*" -DestinationPath "BaoCode-oauth-windows-x64.zip" -Force
+          $installer = Get-ChildItem "build/installers" -Filter "BaoCode-*-setup.exe" | Select-Object -First 1
+          if (-not $installer) {
+            throw "Missing BaoCode-<version>-setup.exe"
+          }
+          Write-Host "Installer: $($installer.FullName), $($installer.Length) bytes"
       - uses: actions/upload-artifact@v4
         with:
-          name: BaoCode-oauth-windows-x64
-          path: BaoCode-oauth-windows-x64.zip
+          name: BaoCode-OAuth-Windows-Setup-EXE
+          path: build/installers/BaoCode-*-setup.exe
           if-no-files-found: error
           retention-days: 30
