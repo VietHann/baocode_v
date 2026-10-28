@@ -34,7 +34,12 @@ void main() {
     });
 
     final secrets = MemorySecretStore();
+    // flutter_test substitutes an HttpClient that responds HTTP 400 to
+    // every request. Construct a genuine client explicitly for the loopback
+    // mock server rather than disabling the test binding's global override.
+    final localClient = _NativeTestHttpOverrides().createHttpClient(null);
     final provider = CopilotDirect(
+      client: localClient,
       completionEndpoint: Uri.parse(
           'http://127.0.0.1:' + server.port.toString() + '/chat'),
     );
@@ -82,6 +87,7 @@ void main() {
     } finally {
       kernel.dispose();
       await subscription.cancel();
+      localClient.close(force: true);
       await server.close(force: true);
     }
   });
@@ -89,3 +95,7 @@ void main() {
 
 Never _cannotCreate(KernelContext context) =>
     throw UnsupportedError('test descriptor is a placeholder');
+
+/// Bypasses Flutter's default HTTP-400 sandbox for the injected test-only
+/// client. Production requests still use ordinary HttpClient security.
+class _NativeTestHttpOverrides extends HttpOverrides {}
