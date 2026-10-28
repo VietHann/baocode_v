@@ -244,7 +244,9 @@ class ModelProxy {
       } else {
         outgoing.remove('reasoning_effort');
       }
-      if (stream) outgoing['stream_options'] = {'include_usage': true};
+      if (stream && !isNativeCopilot(provider)) {
+        outgoing['stream_options'] = {'include_usage': true};
+      }
     } else {
       outgoing = convertClaudeRequestToResponses(
         modelId,
