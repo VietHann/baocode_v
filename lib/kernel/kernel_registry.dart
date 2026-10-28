@@ -77,8 +77,11 @@ abstract final class KernelRegistry {
   // excluded: this build promises native account integration only. Leaving
   // them in the picker made a successful OAuth login appear to give native
   // model access when requests actually launched external executables.
+  // Signed-in Copilot models now appear under Upstreams and run through
+  // VietCode's shared model proxy, just like Codex. Do not show an
+  // unrelated Copilot Chat kernel as a duplicate runtime choice.
   static List<KernelDescriptor> _all = [
-    claudeCode, githubCopilotDirect,
+    claudeCode,
   ];
 
   static List<KernelDescriptor> get all => _all;
