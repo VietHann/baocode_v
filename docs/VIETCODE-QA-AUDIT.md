@@ -15,8 +15,8 @@ providers.
 | Portrait in website/PWA | Addressed | all four web/icons PNGs, favicon; manifest and tab title are VietCode |
 | About branding and GitHub links | Addressed | About page/dialog display VietCode; repo and Star links target VietHann/baocode_v |
 | Existing OAuth Codex / OpenRouter | Existing + added tests | Code and mocked callback tests exist; no live-account validation in CI |
-| Qoder OAuth (no external CLI) | Implemented login + Upstreams account | PKCE device URL + direct Qoder polling + keychain. Linked account is visible in Upstreams but no model is selectable |
-| Qoder model calls (no external CLI) | **Not complete** | COSY signing, authenticated model catalog, response stream and quotas not integrated in native kernel |
+| Qoder OAuth (no external CLI) | Implemented in source | Device PKCE sign-in plus OS keychain and Upstreams account |
+| Qoder native catalog/inference | **Experimental, real account smoke test pending** | Ported RSA/AES/MD5 COSY signer, signed catalog, model_config, body codec and SSE parser into Dart. Mock tests only; quotas, full tool cases and provider compatibility require validation |
 | GitHub Copilot OAuth (no external CLI) | Implemented | Browser device code, Copilot token exchange, model discovery, keychain, mocked HTTP tests |
 | GitHub Copilot upstream and model selection | Implemented in source, real-account check pending | Account and actual discovered models populate Upstreams; enable/disable model toggles; shared model proxy forwards requests with refreshed OAuth token |
 | Google Antigravity OAuth and inference | **Not complete** | Community flows use unofficial OAuth clients/private API; potential account restrictions |
@@ -39,10 +39,10 @@ detail page.
   token and calls `api.githubcopilot.com` directly. No external CLI/gateway.
   If the account has no models/quota or discovery failed, the account still
   appears but **no fabricated model** is offered.
-- **Qoder:** Under **Upstreams → Qoder (account only)**, the signed-in email
-  or account ID is visible, while model selection stays disabled until the
-  proprietary COSY transport has a working integration. Having a Qoder
-  OAuth token does *not* enable model requests.
+- **Qoder:** Under **Upstreams → Qoder**, the signed-in email
+  or account ID is visible. The page automatically requests a signed model catalog and
+  offers Refresh models, per-model enable toggles and a direct COSY test.
+  If Qoder rejects the device token, no fabricated models appear.
 - **OpenRouter:** OAuth sign-in now attempts to fetch real model IDs
   immediately. Models are initially unchecked; use Upstreams → OpenRouter
   to enable the ones required. A failure leaves Fetch available to retry.
@@ -67,7 +67,7 @@ The Windows pipeline must complete **all** of the following before shipping:
 
 **Important:** CI green means the packaged code compiles and the injected HTTP
 contract tests pass. It does NOT certify a user subscription, unofficial
-upstream compatibility, Qoder model execution, Antigravity or a complete
+upstream compatibility, actual Qoder model execution, Antigravity or a complete
 file-editing coding agent.
 
 ## Manual release checklist (needs a consenting test account)
@@ -82,7 +82,8 @@ file-editing coding agent.
   current model catalog, click "Test model (uses quota)", select the direct
   kernel, run two text turns, stop a long turn, sign out.
 - Qoder: verify native device browser flow and encrypted token persistence;
-  **do not advertise Qoder model usage** until signed inference is available.
+  open its Upstream, Refresh models and Test model, verifying both the
+  actual model ID and a returned response. Document any 401/403/quota errors.
 - Codex / OpenRouter: test real sign-in, callback, fail/cancel and one model
   request, since these can regress independently of this fork.
 - Verify token files cannot be read from settings.json, and that no OAuth
@@ -94,7 +95,9 @@ file-editing coding agent.
 
 ## Remaining release blockers for the *full requested scope*
 
-1. Native Qoder model protocol (COSY header signing, catalog and SSE parsing).
+1. Qoder native COSY implementation exists but has not passed a real
+   device-token model request; image upload, quotas and error mapping
+   remain incomplete.
 2. Native Antigravity OAuth plus authenticated inference, with user-visible
    warning on unofficial Google account-access risk and real tests.
 3. OpenCode Zen/Go do not offer the kind of publicly documented subscription
