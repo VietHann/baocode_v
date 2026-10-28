@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:baocode/models/copilot_direct.dart';
-import 'package:baocode/models/model_provider.dart';
 import 'package:baocode/models/model_providers.dart';
 import 'package:baocode/models/native_account_upstreams.dart';
 import 'package:baocode/models/proxy/model_proxy.dart';
