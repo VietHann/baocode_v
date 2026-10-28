@@ -46,7 +46,7 @@ class AccountCliProtocol {
         return AccountCliEvent(
           sessionId: data['session_id'] as String?,
           error: data['is_error'] == true
-              ? (data['result'] ?? 'Qoder request failed').toString()
+              ? 'Qoder request failed. Check CLI sign-in and model quota.'
               : null,
         );
       }
