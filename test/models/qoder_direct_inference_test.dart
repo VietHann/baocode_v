@@ -134,4 +134,68 @@ void main() {
       await server.close(force: true);
     }
   });
+  test('Nested DONE flushes finish and usage before ending stream', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((request) async {
+      request.response.headers.contentType =
+          ContentType(request.method == 'GET' ? 'application' : 'text',
+              request.method == 'GET' ? 'json' : 'event-stream');
+      if (request.method == 'GET') {
+        request.response.write('{"chat":[{"key":"qmodel","enable":true}]}');
+      } else {
+        await request.drain<void>();
+        for (final body in [
+          {
+            'choices': [
+              {'index': 0, 'delta': {'content': 'Hello'}}
+            ]
+          },
+          {
+            'choices': [
+              {'index': 0, 'delta': {'finish_reason': 'stop'}}
+            ]
+          },
+          {
+            'choices': [],
+            'usage': {'input_tokens': 12, 'output_tokens': 5}
+          },
+        ]) {
+          request.response.write('data: ' + jsonEncode({
+            'statusCodeValue': 200,
+            'body': jsonEncode(body),
+          }) + '\n\n');
+        }
+        request.response.write('data: ' + jsonEncode({
+          'statusCodeValue': 200,
+          'body': '[DONE]',
+        }) + '\n\n');
+      }
+      await request.response.close();
+    });
+    try {
+      final base = 'http://127.0.0.1:${server.port}';
+      final qoder = QoderDirect(
+        modelsEndpoint: Uri.parse('$base/models'),
+        chatEndpoint: Uri.parse('$base/chat'),
+      );
+      final events = await qoder.stream(
+        account, 'qmodel', {
+          'messages': [
+            {'role': 'user', 'content': 'Hello'}
+          ],
+        },
+      ).toList().timeout(const Duration(seconds: 5));
+      expect(events.last, 'data: [DONE]');
+      expect(events.where((s) => s == 'data: [DONE]'), hasLength(1));
+      expect(events.any((s) => s.contains('Hello')), isTrue);
+      final usageFrames = events.where((s) => s.contains('"usage"')).toList();
+      expect(usageFrames, hasLength(1));
+      final usage = (jsonDecode(usageFrames.single.substring(6)) as Map)['usage'];
+      expect(usage['prompt_tokens'], 12);
+      expect(usage['completion_tokens'], 5);
+    } finally {
+      await server.close(force: true);
+    }
+  });
+
 }
