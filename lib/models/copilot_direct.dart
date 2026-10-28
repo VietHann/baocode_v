@@ -125,9 +125,23 @@ class CopilotDirect {
       final code = device['device_code'];
       final userCode = device['user_code'];
       final url = device['verification_uri'];
-      if (code is! String || userCode is! String || url is! String) {
+      if (code is! String || code.isEmpty ||
+          userCode is! String || userCode.isEmpty ||
+          url is! String || url.isEmpty) {
         throw const CopilotDirectException(
           'GitHub did not return a device authorization code.',
+        );
+      }
+      // Only display the actual GitHub device authorization page. A changed
+      // or compromised upstream response must not send the user to an
+      // unrelated site to enter a one-time code.
+      final verifyUrl = Uri.tryParse(url);
+      if (verifyUrl == null || verifyUrl.scheme != 'https' ||
+          verifyUrl.host != 'github.com' ||
+          !verifyUrl.path.startsWith('/login/device') ||
+          verifyUrl.userInfo.isNotEmpty) {
+        throw const CopilotDirectException(
+          'GitHub returned an unexpected device verification URL.',
         );
       }
       final interval = (device['interval'] as num?)?.toInt() ?? 5;
@@ -136,7 +150,7 @@ class CopilotDirect {
         owner: this,
         deviceCode: code,
         userCode: userCode,
-        url: Uri.parse(url),
+        url: verifyUrl,
         interval: Duration(seconds: interval > 0 ? interval : 5),
         timeout: Duration(seconds: expires > 0 ? expires : 900),
       );
@@ -202,9 +216,11 @@ class CopilotDirect {
     final current = await ensureToken(account, secrets: secrets);
     final http = _client ?? HttpClient();
     try {
-      final req = await http.getUrl(modelsEndpoint);
+      final req = await http.getUrl(modelsEndpoint)
+          .timeout(const Duration(seconds: 12));
       _copilotHeaders(req, current.copilotToken);
-      final res = await req.close();
+      final res = await req.close()
+          .timeout(const Duration(seconds: 25));
       if (res.statusCode != 200) {
         final status = res.statusCode;
         await res.drain<void>();
@@ -212,7 +228,9 @@ class CopilotDirect {
           'Copilot model discovery failed (HTTP ' + status.toString() + ').',
         );
       }
-      final body = jsonDecode(await utf8.decodeStream(res));
+      final body = jsonDecode(
+        await utf8.decodeStream(res).timeout(const Duration(seconds: 25)),
+      );
       final data = body is Map ? body['data'] : null;
       if (data is! List) return const [];
       final ids = <String>{};
@@ -251,7 +269,9 @@ class CopilotDirect {
           'Copilot model request failed (HTTP ' + status.toString() + ').',
         );
       }
-      final body = jsonDecode(await utf8.decodeStream(res));
+      final body = jsonDecode(
+        await utf8.decodeStream(res).timeout(const Duration(seconds: 90)),
+      );
       final choices = body is Map ? body['choices'] : null;
       if (choices is List && choices.isNotEmpty &&
           choices.first is Map) {
