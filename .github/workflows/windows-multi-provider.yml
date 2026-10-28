@@ -23,9 +23,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
       - name: Run provider tests
-        run: flutter test test/models/openrouter_oauth_test.dart
+        run: dart test test/models/openrouter_oauth_test.dart
       - name: Analyze modified Dart files
-        run: dart analyze lib/models/openrouter_oauth.dart lib/settings/pages/models_page.dart test/models/openrouter_oauth_test.dart
+        run: dart analyze lib/models/oauth_pkce.dart lib/models/openrouter_oauth.dart lib/settings/pages/models_page.dart test/models/openrouter_oauth_test.dart
       - name: Build Windows x64
         run: flutter build windows --release
       - name: Package executable and required runtime
