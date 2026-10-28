@@ -136,6 +136,7 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
   String? _qoderError;
   final CopilotDirect _copilotOAuth = CopilotDirect();
   CopilotDeviceLogin? _copilotLogin;
+  bool _copilotConnecting = false;
   CopilotAccount? _copilotAccount;
   String? _copilotError;
   int? _copilotModelCount;
@@ -265,8 +266,9 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
   }
 
   Future<void> _connectCopilot() async {
-    if (_copilotLogin != null) return;
+    if (_copilotConnecting || _copilotLogin != null) return;
     setState(() {
+      _copilotConnecting = true;
       _copilotError = null;
       _copilotModelCount = null;
     });
@@ -308,7 +310,10 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
     } on Object catch (error) {
       if (mounted) setState(() => _copilotError = '$error');
     } finally {
-      if (mounted) setState(() => _copilotLogin = null);
+      if (mounted) setState(() {
+        _copilotLogin = null;
+        _copilotConnecting = false;
+      });
     }
   }
 
