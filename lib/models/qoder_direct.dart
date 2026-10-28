@@ -64,7 +64,7 @@ class QoderDirect {
 
   /// GET model list with COSY signature; do not inject guessed model IDs.
   Future<List<QoderRemoteModel>> models(
-    QoderAccount account, {bool force = false},
+    QoderAccount account, {bool force = false}
   ) async {
     final key = _key(account);
     if (!force && _catalog.containsKey(key) &&
