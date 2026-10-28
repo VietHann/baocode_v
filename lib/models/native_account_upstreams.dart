@@ -150,7 +150,6 @@ abstract final class NativeAccountUpstreams {
   static Future<ModelProvider> upsertQoder(
     ModelProviders store, QoderAccount account,
   ) async {
-    final existing = store.provider(nativeQoderProviderId);
     final provider = ModelProvider(
       id: nativeQoderProviderId,
       name: 'Qoder',
