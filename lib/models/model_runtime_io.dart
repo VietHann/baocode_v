@@ -10,6 +10,8 @@ import 'image_api.dart';
 import 'image_generation_io.dart';
 import 'launch_environment.dart';
 import 'model_provider.dart';
+import 'copilot_direct.dart';
+import 'native_account_upstreams.dart';
 import 'model_providers.dart';
 import 'model_runtime.dart';
 import 'proxy/model_proxy.dart';
@@ -52,6 +54,23 @@ Future<List<RemoteModel>> listUpstreamModels(
 ) async {
   if (provider.protocol == ProviderProtocol.codex) {
     return _codex.listModels(provider);
+  }
+  if (isNativeCopilot(provider)) {
+    final auth = CopilotDirect();
+    final account = await auth.saved();
+    if (account == null || provider.accounts.isEmpty) {
+      throw const UpstreamException(
+        'GitHub Copilot is not signed in. Use Settings > Models.',
+      );
+    }
+    final ids = await auth.models(account);
+    return [for (final id in ids) RemoteModel(id)];
+  }
+  if (isNativeQoder(provider)) {
+    throw const UpstreamException(
+      'Qoder account is linked, but native COSY model inference '
+      'has not been implemented. Models cannot be fetched yet.',
+    );
   }
   final urls = UpstreamUrls.models(provider);
   if (urls.isEmpty) {
