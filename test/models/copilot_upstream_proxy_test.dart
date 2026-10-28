@@ -16,14 +16,19 @@ void main() {
     final mock = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final seen = <Map<String, dynamic>>[];
     mock.listen((request) async {
-      expect(request.uri.path, '/chat');
-      expect(request.headers.value('authorization'),
-          'Bearer fresh-copilot-model-token');
-      final body = jsonDecode(await utf8.decodeStream(request)) as Map<String, dynamic>;
-      seen.add(body);
-      expect(body['model'], 'copilot-model-from-server');
-      request.response.headers.contentType = ContentType.json;
-      request.response.write(jsonEncode({
+      // Never assert in an async HTTP handler before returning a response:
+      // a failed expectation would strand the proxy forever waiting on
+      // request.close(). Record facts and assert after the HTTP round-trip.
+      try {
+        final body = jsonDecode(await utf8.decodeStream(request))
+            as Map<String, dynamic>;
+        seen.add({
+          ...body,
+          '_auth': request.headers.value('authorization'),
+          '_path': request.uri.path,
+        });
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(jsonEncode({
         'id': 'chatcmpl-1',
         'object': 'chat.completion',
         'created': 1700000000,
@@ -43,8 +48,13 @@ void main() {
           'completion_tokens': 8,
           'total_tokens': 12,
         },
-      }));
-      await request.response.close();
+        }));
+      } on Object catch (error) {
+        request.response.statusCode = 500;
+        request.response.write('Mock server error: $error');
+      } finally {
+        await request.response.close();
+      }
     });
 
     final nativeClient = _RealHttpOverrides().createHttpClient(null);
@@ -97,6 +107,8 @@ void main() {
           contains('It works through VietCode Upstreams'));
       expect(seen, hasLength(1));
       expect(seen.single['model'], 'copilot-model-from-server');
+      expect(seen.single['_path'], '/chat');
+      expect(seen.single['_auth'], 'Bearer fresh-copilot-model-token');
     } finally {
       requesting.close(force: true);
       await proxy.close();
